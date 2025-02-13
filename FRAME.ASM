@@ -2,13 +2,12 @@
 .code
 org 100h
 
-COLOR			equ	07h
 
 PSP_CMDLINE_LEN_OFFSET	equ	80h
 PSP_CMDLINE_OFFSET	equ	81h
-
 GFX_MEM_SEGMENT		equ	00b800h 
 GFX_MODE		equ	3h
+
 
 FRAME_SETTINGS STRUC
 	FR_START_X		db ?
@@ -16,7 +15,12 @@ FRAME_SETTINGS STRUC
 	FR_WIDTH		db ?
 	FR_HEIGHT		db ?
 	FR_SELECTED_STYLE	db ?
+	; FR_STR_LEN		db ?
+	; FR_STR			db 128 dup(?)
+	FR_STR			db "amogus is\ absolutely real"
+	FR_STR_LEN		db 26
 FRAME_SETTINGS ENDS
+
 
 FRAME_STYLE STRUC
 	ST_CHARMAP		db 9 dup(?)
@@ -24,13 +28,15 @@ FRAME_STYLE STRUC
 FRAME_STYLE ENDS
 
 
-
 Start:		
 		call init_gfx
 
 		call parse_cmdline
 		call get_chars
+
 		call draw_frame 
+		call draw_text
+
 		call wait_for_key
 
 		xor al, al
@@ -43,9 +49,9 @@ Start:
 ; Output:	BX - converted integer
 ; Destroys:	None
 strtod		proc
-		push ax
-		push cx
-		push dx
+		push	ax
+		push	cx
+		push	dx
 		xor	bx, bx
 
 @@next_num:
@@ -91,7 +97,6 @@ parse_cmdline	proc
 		inc	si
 
 		mov	di, offset Current_Settings
-		;int 3
 
 		mov	ax, ' '				; Skip whitespaces
 		xor	cx, cx				; CX will store the amount of arguments parsed so far
@@ -127,8 +132,50 @@ wait_for_key	proc
 		endp
 
 
+; Draws text specified in Current_Settings
+draw_text	proc
+		push	si cx bx
+		xor	cx, cx
+		mov	si, offset Current_Settings.FR_STR
+		mov	cl, byte ptr [Current_Settings.FR_STR_LEN]
+
+		mov	al, byte ptr [Current_Settings.FR_WIDTH]
+		sub	al, cl
+		mov	ah, byte ptr [Current_Settings.FR_HEIGHT]
+		shr	al, 1
+		shr	ah, 1
+		add	al, byte ptr [Current_Settings.FR_START_X]
+		add	ah, byte ptr [Current_Settings.FR_START_Y]
+		
+		push	cx
+		mov	cx, ax
+		call	pos_to_pixel
+		mov	di, ax		
+		pop	cx
+
+		call	get_color
+		
+@@text_loop:
+		lodsb
+		cmp	ax, '\'
+		je	@@newline
+@@newline_cont:
+		
+		stosw
+		loop	@@text_loop
+
+		pop	bx cx si
+		ret
+	
+@@newline:
+		
+		jmp @@newline_cont
+
+		endp
+
+
 ; Draws the frame
-; Input:	BX - style (first sym ptr), (CL, CH) - starting pos, (DL, DH) - width/height, 
+; Input:	Current_Settings
 ; Output:	None
 ; Destroys:	BX
 draw_frame	proc
@@ -152,9 +199,9 @@ frame_loop:
 		add si, 3
 		call draw_line
 
+
 		ret
 		endp
-
 
 
 
