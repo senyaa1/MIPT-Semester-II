@@ -10,7 +10,6 @@ PSP_CMDLINE_OFFSET	equ	81h
 GFX_MEM_SEGMENT		equ	00b800h 
 GFX_MODE		equ	3h
 
-
 FRAME_SETTINGS STRUC
 	FR_START_X		db ?
 	FR_START_Y		db ?
@@ -19,25 +18,21 @@ FRAME_SETTINGS STRUC
 	FR_SELECTED_STYLE	db ?
 FRAME_SETTINGS ENDS
 
-
 FRAME_STYLE STRUC
 	ST_CHARMAP		db 9 dup(?)
 	ST_COLOR		db ?
 FRAME_STYLE ENDS
 
+
+
 Start:		
 		call init_gfx
-		call parse_cmdline
 
-		mov si, offset frame_style1
-	
-		mov cl, 22	; start pos x
-		mov ch, 7	; start pos y
-		mov dl, 40	; length
-		mov dh, 10	; height
+		call parse_cmdline
+		call get_chars
 		call draw_frame 
-		
 		call wait_for_key
+
 		xor al, al
 		call exit
 
@@ -161,23 +156,43 @@ frame_loop:
 		endp
 
 
-; Sets color accoring to Current_Settings
-; Input:None
-get_color	proc
-		int 3
-		push bx
-		xor ax, ax
-		mov al, byte ptr [Current_Settings.FR_SELECTED_STYLE]
-		mov bh, 2
-		mul bh
-		mov bx, offset style_list			
-		add bx, ax			; bx = style_list + selected * 2
-		
-		xor ax, ax
-		mov ah, byte ptr [bx + FRAME_STYLE.ST_COLOR]
-		int 3
 
-		pop bx
+
+; Sets color accoring to Current_Settings
+; Input: None
+get_color	proc
+		push	bx
+		xor	ax, ax
+
+		mov	al, byte ptr [Current_Settings.FR_SELECTED_STYLE]
+		mov	bh, SIZE FRAME_STYLE
+		mul	bh
+		mov	bx, offset styles			
+		add	bx, ax							; bx = style_list + selected * sizeof(frame_style)
+
+		xor	ax, ax
+		mov	ah, byte ptr [bx + FRAME_STYLE.ST_COLOR]
+
+		pop	bx
+		ret
+		endp
+
+
+
+; Sets SI according to Current_Settings
+get_chars	proc
+		push	ax bx
+		xor	ax, ax
+
+		mov	al, byte ptr [Current_Settings.FR_SELECTED_STYLE]
+		mov	bh, SIZE FRAME_STYLE
+		mul	bh
+		mov	bx, offset styles			
+		add	bx, ax							; bx = style_list + selected * sizeof(frame_style)
+		add	bx, FRAME_STYLE.ST_CHARMAP
+		mov	si, bx
+
+		pop	bx ax
 		ret
 		endp
 
@@ -273,11 +288,11 @@ exit		proc
 		endp
 
 .data
-	Current_Settings	FRAME_SETTINGS <0, 7, 40, 10, 1>
+	Current_Settings	FRAME_SETTINGS <0, 7, 40, 10, 2>
+styles:
 	user_style		FRAME_STYLE <>
 	frame_style1		FRAME_STYLE <"123456789", 07h>
 	frame_style2		FRAME_STYLE <"+-+| |+-+", 70h>
-	style_list		dw offset user_style, offset frame_style1, offset frame_style2
 
 END Start
 
