@@ -43,6 +43,23 @@ Start:
 		call exit
 
 
+line_len	proc
+		push	es
+		mov	dx, ds
+		mov	es, dx
+		mov	di, offset Current_Settings.FR_STR
+		
+		mov	al, '\'
+		xor	cx, cx
+		cld
+		int 3
+	repne	scasb
+		int 3
+
+		pop es
+		ret
+		endp
+
 
 ; Converts string to int, iterates over the string, until it finds non-numeric character
 ; Input:	SI - ptr to the string
@@ -97,8 +114,8 @@ parse_cmdline	proc
 		inc	si
 
 		mov	di, offset Current_Settings
-
-		mov	ax, ' '				; Skip whitespaces
+		xor	ax, ax
+		mov	al, ' '				; Skip whitespaces
 		xor	cx, cx				; CX will store the amount of arguments parsed so far
 		cld
 @@read_loop:
@@ -127,7 +144,32 @@ parse_cmdline	proc
 wait_for_key	proc
 		mov  ah, 0
 		int  16h
-		
+		ret
+		endp
+
+
+; Calculates the length of a line provided (line ends with \)
+; Input:	SI - the string itself
+; Output:	AX - length
+; Destroys:	
+linelen		proc
+		push	cx di
+		xor	cx, cx
+
+		mov	di, offset Current_Settings.FR_STR
+
+		xor	ax, ax
+		mov	al, '\'				
+		xor	cx, cx				; CX will store the amount of arguments parsed so far
+		cld
+
+		int 3
+	rep	scasb
+		int 3
+	
+
+		mov	ax, cx
+		pop	di cx
 		ret
 		endp
 
@@ -146,6 +188,7 @@ draw_text	proc
 		shr	ah, 1
 		add	al, byte ptr [Current_Settings.FR_START_X]
 		add	ah, byte ptr [Current_Settings.FR_START_Y]
+
 		
 		push	cx
 		mov	cx, ax
@@ -153,15 +196,17 @@ draw_text	proc
 		mov	di, ax		
 		pop	cx
 
+		call	linelen
+
 		call	get_color
 		
 @@text_loop:
 		lodsb
-		cmp	ax, '\'
-		je	@@newline
-@@newline_cont:
-		
+		cmp	al, '\'
+		je	@@newline	
+
 		stosw
+@@newline_cont:
 		loop	@@text_loop
 
 		pop	bx cx si
