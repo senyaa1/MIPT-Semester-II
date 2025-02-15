@@ -17,8 +17,8 @@ FRAME_SETTINGS STRUC
 	FR_SELECTED_STYLE	db ?
 	; FR_STR_LEN		db ?
 	; FR_STR			db 128 dup(?)
-	FR_STR			db "amogus is\ absolutely real"
-	FR_STR_LEN		db 26
+	FR_STR			db "amogus is \it is\ really real"
+	FR_STR_LEN		db 30
 FRAME_SETTINGS ENDS
 
 
@@ -27,6 +27,13 @@ FRAME_STYLE STRUC
 	ST_COLOR		db ?
 FRAME_STYLE ENDS
 
+; TODO:
+;	opening animation
+;	properly parse arguments
+;	parse string
+;	parse custom styles
+;	double-borded style
+;	bg
 
 Start:		
 		call init_gfx
@@ -35,6 +42,7 @@ Start:
 		call get_chars
 
 		call draw_frame 
+
 		call draw_text
 
 		call wait_for_key
@@ -42,23 +50,6 @@ Start:
 		xor al, al
 		call exit
 
-
-line_len	proc
-		push	es
-		mov	dx, ds
-		mov	es, dx
-		mov	di, offset Current_Settings.FR_STR
-		
-		mov	al, '\'
-		xor	cx, cx
-		cld
-		int 3
-	repne	scasb
-		int 3
-
-		pop es
-		ret
-		endp
 
 
 ; Converts string to int, iterates over the string, until it finds non-numeric character
@@ -114,15 +105,13 @@ parse_cmdline	proc
 		inc	si
 
 		mov	di, offset Current_Settings
+		int 3
 		xor	ax, ax
 		mov	al, ' '				; Skip whitespaces
-		xor	cx, cx				; CX will store the amount of arguments parsed so far
 		cld
 @@read_loop:
-		push	cx
-		xor	cx, cx
+		mov	cx, -1 
 	repe	scasb
-		pop	cx
 
 		call	strtod				; BX now has the parsed integer
 		mov	byte ptr [di], bl
@@ -132,8 +121,8 @@ parse_cmdline	proc
 		cmp	si, dx
 		jle	@@read_loop
 		
-		;int 3
 		pop	es
+		int 3
 		ret
 		endp
 
@@ -149,46 +138,129 @@ wait_for_key	proc
 
 
 ; Calculates the length of a line provided (line ends with \)
-; Input:	SI - the string itself
+; Input:	SI - the string itself, CX - length
 ; Output:	AX - length
-; Destroys:	
-linelen		proc
-		push	cx di
-		xor	cx, cx
+; Destroys:	None
+line_len		proc
+		push	es cx di
 
-		mov	di, offset Current_Settings.FR_STR
+		push	ds
+		pop	es
+
+		mov	di, si
 
 		xor	ax, ax
 		mov	al, '\'				
-		xor	cx, cx				; CX will store the amount of arguments parsed so far
 		cld
 
-		int 3
-	rep	scasb
-		int 3
+	repne	scasb
 	
+		sub	di, si
+		dec	di
+		mov	ax, di
 
-		mov	ax, cx
-		pop	di cx
+		pop	di cx es
+		ret
+		endp
+
+;		Gets amount of newlines in the text (cnt of \)
+; Input:	SI - string, CX - length
+; Output:	DH - amount of lines
+; Destroys:	None
+get_line_cnt	proc
+		push	di cx ax
+
+		push	es
+		mov	dx, ds
+		mov	es, dx
+		mov	di, si
+
+		xor	dh, dh
+
+		xor	ax, ax
+		mov	al, '\'				
+		cld
+
+@@line_cnt_loop:
+		scasb
+		je @@line_cnt_count
+		loop @@line_cnt_loop
+	
+		pop	es
+		pop	ax cx di
+		ret
+
+@@line_cnt_count:
+		inc	dh
+		loop @@line_cnt_loop
+		endp
+
+
+;		Draws multi-line text (terminated with \) specified in Current_Settings
+; Input:	None
+; Output:	None
+; Destroys:	None
+draw_text	proc
+		push	cx ax dx
+		xor	cx, cx
+		xor	ax, ax
+		xor	dx, dx
+
+		mov	si, offset Current_Settings.FR_STR
+		mov	cl, byte ptr [Current_Settings.FR_STR_LEN]
+		
+		call	get_line_cnt					; calculate offset - (height - lines / 2)
+		sub	dh, byte ptr [Current_Settings.FR_HEIGHT]
+		neg	dh
+		shr	dh, 1
+		sub	dh, 1
+
+		cld
+@@line_loop:
+		call	line_len
+		sub	cl, al		; cl - leftover strlen
+					; al - current terminated line len
+		test	al, al
+		jz	@@line_exit
+
+		mov	dl, al
+		call	draw_text_line
+
+		add	si, ax
+		inc	dh		; skip to newline
+		inc	si		; skip one symbol (\)
+		dec	cl
+
+		test	cl, cl
+		jz	@@line_exit
+
+		jmp	@@line_loop
+
+@@line_exit:
+
+
+		pop	dx ax cx
 		ret
 		endp
 
 
-; Draws text specified in Current_Settings
-draw_text	proc
-		push	si cx bx
-		xor	cx, cx
-		mov	si, offset Current_Settings.FR_STR
-		mov	cl, byte ptr [Current_Settings.FR_STR_LEN]
+;		Draws single line at specified offset
+; Input:	SI - string start, DH - offset, DL - Line Length
+; Output:	None
+; Destroys:	DI
+draw_text_line	proc
+		push	di ax si cx bx
+
+		mov	cl, dl
 
 		mov	al, byte ptr [Current_Settings.FR_WIDTH]
 		sub	al, cl
-		mov	ah, byte ptr [Current_Settings.FR_HEIGHT]
-		shr	al, 1
-		shr	ah, 1
-		add	al, byte ptr [Current_Settings.FR_START_X]
-		add	ah, byte ptr [Current_Settings.FR_START_Y]
+		shr	al, 1							
+		add	al, byte ptr [Current_Settings.FR_START_X]		; (width - strlen) / 2 + start_x
 
+		add	ah, dh							
+		add	ah, byte ptr [Current_Settings.FR_START_Y]		; offset + start_y + 1
+		inc	ah
 		
 		push	cx
 		mov	cx, ax
@@ -196,26 +268,15 @@ draw_text	proc
 		mov	di, ax		
 		pop	cx
 
-		call	linelen
-
 		call	get_color
-		
+
 @@text_loop:
 		lodsb
-		cmp	al, '\'
-		je	@@newline	
-
 		stosw
-@@newline_cont:
 		loop	@@text_loop
 
-		pop	bx cx si
+		pop	bx cx si ax di
 		ret
-	
-@@newline:
-		
-		jmp @@newline_cont
-
 		endp
 
 
@@ -243,7 +304,6 @@ frame_loop:
 
 		add si, 3
 		call draw_line
-
 
 		ret
 		endp
@@ -350,10 +410,10 @@ init_gfx	proc
 		endp
 
 
-; Input: position - ch - X, cl - Y
-; Output: ax - graphics memory offset
+; Input: position - ch - X, cl - Y (CX)
+; Output: AX - graphics memory offset
 ; ax = (row * 80 + col) * 2
-; Destroys: BX, AX
+; Destroys: BX
 pos_to_pixel	proc 
 		mov al, ch
 		mov ah, 0	; ax = row
@@ -380,7 +440,7 @@ exit		proc
 		endp
 
 .data
-	Current_Settings	FRAME_SETTINGS <0, 7, 40, 10, 2>
+	Current_Settings	FRAME_SETTINGS <15, 15, 40, 10, 2>
 styles:
 	user_style		FRAME_STYLE <>
 	frame_style1		FRAME_STYLE <"123456789", 07h>
