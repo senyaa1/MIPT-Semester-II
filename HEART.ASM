@@ -27,16 +27,24 @@ Start:
 	call	init_gfx
 ;	call	init_heart
 
+	mov	si, offset p1
+	mov	di, offset p2
+	call	draw_line
+
 	; int 3
 	; mov	si, offset heartFront
 	; mov	di, offset testProjected
 	; call	project
 	; int 3
 
-	call	draw
+;	call	draw
 
 	call	wait_for_key
 	call	exit_0
+
+
+	p1	Screen2D	<20d, 10d>
+	p2	Screen2D	<100d, 70d>
 
 
 ; ---------------------------------------
@@ -82,10 +90,10 @@ draw		proc
 		mov	bx, VERTEX_CNT
 		call	modulo			; DX = (i + 1) % vertex_cnt (next)
 
-		mov	di, offset projFront
+		mov	si, offset projFront
 		mov	ax, cx
 		mul	word ptr [SCREEN2D_SZ]
-		add	di, ax			; di = projFront + cx * sz 
+		add	si, ax			; di = projFront + cx * sz 
 
 		xor	ax, ax
 		mov	al, 0ch
@@ -104,7 +112,6 @@ draw		proc
 	vFront	Vector3 ?
 	vBack	Vector3 ?
 		endp
-
 
 
 ; ---------------------------------------
@@ -128,16 +135,103 @@ pos_to_pixel	proc
 
 ; ---------------------------------------
 ; Draws a point on a screen
-; INPUT:	DI - Vector2 projection coords
+; INPUT:	SI - Screen2D projection coords
 ; OUTPUT:	None
-; DESTROYS:	AX
+; DESTROYS:	None
 draw_point	proc
-		mov	si, di
+		push	ax di
 		call	pos_to_pixel
 
 		stosb
 
+		pop	di ax
 		ret
+		endp
+
+
+; ---------------------------------------
+; Draws a line between 2 points using Bresenham's line algorithm
+; INPUT:	SI - p1 (Screen2D), DI - p2 (Screen2D)
+; OUTPUT:	None
+; DESTROYS:	
+draw_line	proc
+;plotLine(x0, y0, x1, y1)
+;    dx = x1 - x0
+;    dy = y1 - y0
+;    D = 2*dy - dx
+;    y = y0
+;
+;    for x from x0 to x1
+;        plot(x, y)
+;        if D > 0
+;            y = y + 1
+;            D = D - 2*dx
+;        end if
+;        D = D + 2*dy
+
+;
+;	p1	Screen2D	<20d, 10d>
+;	p2	Screen2D	<100d, 70d>
+;
+		int 3
+
+		mov	ax, word ptr [DI.SC_X]
+		sub	ax, word ptr [SI.SC_X]	; AX = dx = p2.x - p1.x
+
+		jge	@@dont_swap_points		
+		xchg	si, di
+		neg	ax
+
+@@dont_swap_points:
+		mov	bx, word ptr [DI.SC_Y]
+		sub	bx, word ptr [SI.SC_Y]	
+		shl	bx, 1			; BX = 2dy = 2 * (p2.y - p1.y)
+
+		mov	dx, bx
+		sub	dx, ax			; D = 2dy - dx
+		shl	ax, 1			; dx *= 2	
+		
+		push	si
+		mov	cx, word ptr [SI.SC_Y]	; y = p1.y
+		mov	si, offset cur_coords
+		mov	word ptr [SI.SC_Y], cx
+		pop	si
+
+		mov	cx, word ptr [SI.SC_X]	; x = p1.x
+		mov	si, offset cur_coords
+
+		int 3
+
+@@line_loop:
+		mov	[si.SC_X], cx
+
+		push	ax
+		xor	ax, ax
+		mov	al, 0ch
+		call	draw_point		; set color and draw
+		pop	ax
+
+		cmp	dx, 0
+		jle	@@less			; D <= 0
+		
+		push	bx
+		mov	bx, word ptr [si.SC_Y]
+		inc	bx
+		mov	word ptr [si.SC_Y], bx	; y++
+		pop	bx
+		
+		sub	dx, ax			; D -= 2dx
+@@less:
+		add	dx, bx			; D += 2dy
+
+		cmp	cx, word ptr [DI.SC_X]	; while(x < p2.x)
+		jle	@@line_loop
+		
+		int 3
+		ret
+
+	cur_coords	Screen2D ?
+
 		endp
 
 
@@ -314,7 +408,7 @@ curve_param_y6	dw  4
 ; INPUT:	SI - Vector3 ptr, DI - Screen2D ptr
 ; OUTPUT:	Outputs the projected vector into the ptr provided in DI register
 ; DESTROYS:	None
-project		proc									; FIXME: THIS DOESNT COMPUTE CORRECTLY
+project		proc	
 		fld	dword ptr [fov]		
 		fld	dword ptr [distance]
 		fld	dword ptr [SI.Z]	; st(0) - z; st(1) - distance; st(2) - fov
