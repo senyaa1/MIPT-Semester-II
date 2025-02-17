@@ -4,7 +4,7 @@
 
 SCREEN_WIDTH	equ 320d
 SCREEN_HEIGHT	equ 200d
-VERTEX_CNT	equ 40d
+VERTEX_CNT	equ 100d
 
 VIDEO_MODE	equ 13h
 GFX_MEM		equ 0a100h
@@ -25,7 +25,13 @@ org 100h
 
 Start:
 	call	init_gfx
-	call	init_heart
+;	call	init_heart
+
+	; int 3
+	; mov	si, offset heartFront
+	; mov	di, offset testProjected
+	; call	project
+	; int 3
 
 	call	draw
 
@@ -42,6 +48,7 @@ draw		proc
 	
 @@main_loop:
 	xor	bx, bx
+		int 3
 	@@projection_loop:
 			mov	si, offset heartFront 
 			mov	ax, bx
@@ -50,9 +57,9 @@ draw		proc
 			mov	di, offset vFront
 			call	copy_vector3		; vFront = heartFront[i]
 
-			mov	si, di
+;			mov	si, di
 ;			call	rotate_y		; vFront = rotateY(vFront, angle)
-			mov	si, di
+;			mov	si, di
 ;			call	rotate_x		; vFront = rotateX(vFront, angle)
 
 			mov	di, offset projFront
@@ -62,36 +69,35 @@ draw		proc
 
 			call	project
 
-		
 			inc	bx
 			cmp	bx, VERTEX_CNT
 			jle	@@projection_loop
 	
+		int 3
 	; Render lines
 	xor	cx, cx
 	@@render_loop:
 		mov	ax, cx
 		inc	ax
 		mov	bx, VERTEX_CNT
-		; call	modulo			; DX = (i + 1) % vertex_cnt (next)
+		call	modulo			; DX = (i + 1) % vertex_cnt (next)
 
 		mov	di, offset projFront
-		mov	ax, bx
+		mov	ax, cx
 		mul	word ptr [SCREEN2D_SZ]
 		add	di, ax			; di = projFront + cx * sz 
+
+		xor	ax, ax
+		mov	al, 0ch
 		call	draw_point		; draw(projFront[i])
 
-;draw_point		; draw(projFront[next])
-		
 
 		inc	cx
 		cmp	cx, VERTEX_CNT
 		jl	@@render_loop
 	
-
-;		jmp @@main_loop
-
-
+		ret
+;	jmp @@main_loop
 
 	ret
 
@@ -154,16 +160,16 @@ modulo		proc
 ; Copies DWORD
 ; INPUT:	ES:SI, DI
 ; OUTPUT:	Copies from DS:SI to DS:DI
-; DESTROYS:	None
+; DESTROYS:	SI DI
 copy_dword	proc
 		push	ax es
 		push	ds
 		pop	es
 
-		stosw
 		lodsw
 		stosw
 		lodsw
+		stosw
 
 		pop	es ax
 		ret
@@ -208,7 +214,6 @@ copy_screen2d	proc
 ; OUTPUT:	
 ; DESTROYS:	
 init_heart	proc
-		int 3
 		push	cx dx si di bx
 
 		xor	bx, bx
@@ -216,7 +221,6 @@ init_heart	proc
 
 		mov	word ptr [cnt], cx 
 @@heart_loop:
-		int 3
 		mov	word ptr [i], bx
 		fild	word ptr [cnt]
 		fldpi
@@ -241,7 +245,6 @@ init_heart	proc
 		add	ax, offset heartFront.X
 		mov	di, ax
 		fstp	dword ptr [di]
-
 
 		fld	dword ptr [curve_t]
 		fcos					
@@ -281,12 +284,10 @@ init_heart	proc
 
 		inc	bx
 		cmp	bx, VERTEX_CNT
-		int 3
 		jnz	@@heart_loop
 
 
 		pop	bx di si dx cx
-		int 3
 		ret
 
 i		dw  ?
@@ -497,10 +498,114 @@ wait_for_key	proc
 	SCREEN_HEIGHT_HALVED	dw  SCREEN_HEIGHT / 2d
 
 	; TestVector	Vector3	<1.5, 2.0, 3.0>
-	heartFront	Vector3 VERTEX_CNT dup(?)
+;	heartFront	Vector3 VERTEX_CNT dup(?)
+heartFront:
+Vector3	<0, 0.25, 0.25>
+Vector3	<0.000198049, 0.254031, 0.25>
+Vector3	<0.00157503, 0.265936, 0.25>
+Vector3	<0.00526343, 0.285161, 0.25>
+Vector3	<0.0123045, 0.310814, 0.25>
+Vector3	<0.0236068, 0.341703, 0.25>
+Vector3	<0.0399093, 0.376395, 0.25>
+Vector3	<0.0617509, 0.413282, 0.25>
+Vector3	<0.0894469, 0.450653, 0.25>
+Vector3	<0.123073, 0.486773, 0.25>
+Vector3	<0.16246, 0.519959, 0.25>
+Vector3	<0.207193, 0.548652, 0.25>
+Vector3	<0.256626, 0.57148, 0.25>
+Vector3	<0.309896, 0.58731, 0.25>
+Vector3	<0.365957, 0.59529, 0.25>
+Vector3	<0.423607, 0.594871, 0.25>
+Vector3	<0.48153, 0.585815, 0.25>
+Vector3	<0.538342, 0.568188, 0.25>
+Vector3	<0.592634, 0.54234, 0.25>
+Vector3	<0.643022, 0.508866, 0.25>
+Vector3	<0.688191, 0.468566, 0.25>
+Vector3	<0.726944, 0.422389, 0.25>
+Vector3	<0.758238, 0.371376, 0.25>
+Vector3	<0.781224, 0.31661, 0.25>
+Vector3	<0.795273, 0.259151, 0.25>
+Vector3	<0.8, 0.2, 0.25>
+Vector3	<0.795273, 0.140048, 0.25>
+Vector3	<0.781224, 0.0800514, 0.25>
+Vector3	<0.758238, 0.0206151, 0.25>
+Vector3	<0.726944, -0.0378178, 0.25>
+Vector3	<0.688191, -0.0949594, 0.25>
+Vector3	<0.643022, -0.150661, 0.25>
+Vector3	<0.592634, -0.20489, 0.25>
+Vector3	<0.538342, -0.257697, 0.25>
+Vector3	<0.48153, -0.309183, 0.25>
+Vector3	<0.423607, -0.359461, 0.25>
+Vector3	<0.365957, -0.408622, 0.25>
+Vector3	<0.309896, -0.456704, 0.25>
+Vector3	<0.256626, -0.503664, 0.25>
+Vector3	<0.207193, -0.549366, 0.25>
+Vector3	<0.16246, -0.593566, 0.25>
+Vector3	<0.123073, -0.63592, 0.25>
+Vector3	<0.0894469, -0.675988, 0.25>
+Vector3	<0.061751, -0.713256, 0.25>
+Vector3	<0.0399093, -0.747158, 0.25>
+Vector3	<0.0236068, -0.777113, 0.25>
+Vector3	<0.0123045, -0.80255, 0.25>
+Vector3	<0.00526343, -0.822946, 0.25>
+Vector3	<0.00157503, -0.837858, 0.25>
+Vector3	<0.000198048, -0.846947, 0.25>
+Vector3	<-5.3452e-22, -0.85, 0.25>
+Vector3	<-0.00019805, -0.846946, 0.25>
+Vector3	<-0.00157503, -0.837858, 0.25>
+Vector3	<-0.00526342, -0.822947, 0.25>
+Vector3	<-0.0123045, -0.80255, 0.25>
+Vector3	<-0.0236068, -0.777113, 0.25>
+Vector3	<-0.0399093, -0.747159, 0.25>
+Vector3	<-0.061751, -0.713256, 0.25>
+Vector3	<-0.0894469, -0.675988, 0.25>
+Vector3	<-0.123073, -0.63592, 0.25>
+Vector3	<-0.16246, -0.593566, 0.25>
+Vector3	<-0.207193, -0.549366, 0.25>
+Vector3	<-0.256626, -0.503664, 0.25>
+Vector3	<-0.309896, -0.456704, 0.25>
+Vector3	<-0.365957, -0.408622, 0.25>
+Vector3	<-0.423607, -0.359461, 0.25>
+Vector3	<-0.48153, -0.309183, 0.25>
+Vector3	<-0.538342, -0.257697, 0.25>
+Vector3	<-0.592634, -0.20489, 0.25>
+Vector3	<-0.643022, -0.150661, 0.25>
+Vector3	<-0.688191, -0.0949595, 0.25>
+Vector3	<-0.726944, -0.0378179, 0.25>
+Vector3	<-0.758238, 0.0206151, 0.25>
+Vector3	<-0.781224, 0.0800514, 0.25>
+Vector3	<-0.795273, 0.140048, 0.25>
+Vector3	<-0.8, 0.2, 0.25>
+Vector3	<-0.795273, 0.259152, 0.25>
+Vector3	<-0.781224, 0.31661, 0.25>
+Vector3	<-0.758238, 0.371376, 0.25>
+Vector3	<-0.726944, 0.422389, 0.25>
+Vector3	<-0.688191, 0.468566, 0.25>
+Vector3	<-0.643022, 0.508866, 0.25>
+Vector3	<-0.592634, 0.54234, 0.25>
+Vector3	<-0.538342, 0.568188, 0.25>
+Vector3	<-0.48153, 0.585815, 0.25>
+Vector3	<-0.423607, 0.594871, 0.25>
+Vector3	<-0.365957, 0.59529, 0.25>
+Vector3	<-0.309897, 0.58731, 0.25>
+Vector3	<-0.256626, 0.57148, 0.25>
+Vector3	<-0.207193, 0.548653, 0.25>
+Vector3	<-0.16246, 0.519959, 0.25>
+Vector3	<-0.123073, 0.486773, 0.25>
+Vector3	<-0.0894469, 0.450653, 0.25>
+Vector3	<-0.0617509, 0.413282, 0.25>
+Vector3	<-0.0399093, 0.376395, 0.25>
+Vector3	<-0.0236068, 0.341703, 0.25>
+Vector3	<-0.0123045, 0.310814, 0.25>
+Vector3	<-0.00526342, 0.285161, 0.25>
+Vector3	<-0.00157503, 0.265936, 0.25>
+Vector3	<-0.000198047, 0.254031, 0.25>
 
 	projFront	Screen2D VERTEX_CNT dup(?)
 	projBack	Screen2D VERTEX_CNT dup(?)
+
+
+	testProjected	Screen2D <0d, 0d>
 
 	factor		dd  ?
 	VECTOR3_SZ	dw	SIZE Vector3
