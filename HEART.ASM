@@ -7,7 +7,8 @@ SCREEN_HEIGHT	equ 200d
 VERTEX_CNT	equ 100d
 
 VIDEO_MODE	equ 13h
-GFX_MEM		equ 0a100h
+GFX_MEM		equ 0a000h
+COLOR		equ 0ch
 
 Vector3	STRUC
 	X	dd ?
@@ -27,24 +28,17 @@ Start:
 	call	init_gfx
 ;	call	init_heart
 
-	mov	si, offset p1
-	mov	di, offset p2
-	call	draw_line
-
-	; int 3
 	; mov	si, offset heartFront
 	; mov	di, offset testProjected
 	; call	project
-	; int 3
-
-;	call	draw
+	call	draw
 
 	call	wait_for_key
 	call	exit_0
 
 
-	p1	Screen2D	<20d, 10d>
-	p2	Screen2D	<100d, 70d>
+	p1	Screen2D	<2d, 2d>
+	p2	Screen2D	<30d, 100d>
 
 
 ; ---------------------------------------
@@ -56,7 +50,6 @@ draw		proc
 	
 @@main_loop:
 	xor	bx, bx
-		int 3
 	@@projection_loop:
 			mov	si, offset heartFront 
 			mov	ax, bx
@@ -81,7 +74,6 @@ draw		proc
 			cmp	bx, VERTEX_CNT
 			jle	@@projection_loop
 	
-		int 3
 	; Render lines
 	xor	cx, cx
 	@@render_loop:
@@ -90,14 +82,20 @@ draw		proc
 		mov	bx, VERTEX_CNT
 		call	modulo			; DX = (i + 1) % vertex_cnt (next)
 
+		mov	di, offset projFront
+		mov	ax, dx
+		mul	word ptr [SCREEN2D_SZ]
+		add	di, ax			; si = projFront + dx * sz 
+
 		mov	si, offset projFront
 		mov	ax, cx
 		mul	word ptr [SCREEN2D_SZ]
 		add	si, ax			; di = projFront + cx * sz 
 
 		xor	ax, ax
-		mov	al, 0ch
-		call	draw_point		; draw(projFront[i])
+		mov	al, COLOR
+		int 3
+		call	draw_line		; draw(projFront[i], projFront[i + 1 % n])
 
 
 		inc	cx
@@ -148,89 +146,150 @@ draw_point	proc
 		ret
 		endp
 
+; ---------------------------------------
+;; Swap word at offset 0 (SC_X) with word at offset 2 (SC_Y)
+; INPUT:	SI - Screen2D projection coords
+; OUTPUT:	None
+; DESTROYS:	None
+swapXY_p1	proc
+		mov	ax, word ptr [si.SC_X]       
+		mov	dx, word ptr [si.SC_Y]     
+		mov	word ptr [si.SC_X], dx
+		mov	word ptr [si.SC_Y], ax
+
+		ret
+		endp
+
+; ---------------------------------------
+;; Swap word at offset 0 (SC_X) with word at offset 2 (SC_Y)
+; INPUT:	DI - Screen2D projection coords
+; OUTPUT:	None
+; DESTROYS:	None
+swapXY_p2	proc
+		mov	ax, word ptr [di.SC_X]       
+		mov	dx, word ptr [di.SC_Y]     
+		mov	word ptr [di.SC_X], dx
+		mov	word ptr [di.SC_Y], ax
+
+		ret
+		endp
 
 ; ---------------------------------------
 ; Draws a line between 2 points using Bresenham's line algorithm
-; INPUT:	SI - p1 (Screen2D), DI - p2 (Screen2D)
+; INPUT:	SI - p1 (Screen2D), DI - p2 (Screen2D), byte COLOR (global var)
 ; OUTPUT:	None
-; DESTROYS:	
+; DESTROYS:	None
 draw_line	proc
-;plotLine(x0, y0, x1, y1)
-;    dx = x1 - x0
-;    dy = y1 - y0
-;    D = 2*dy - dx
-;    y = y0
-;
-;    for x from x0 to x1
-;        plot(x, y)
-;        if D > 0
-;            y = y + 1
-;            D = D - 2*dx
-;        end if
-;        D = D + 2*dy
+; void plotLine(int x0, int y0, int x1, int y1)
+; {
+;    int dx =  abs(x1-x0), sx = x0<x1 ? 1 : -1;
+;    int dy = -abs(y1-y0), sy = y0<y1 ? 1 : -1; 
+;    int err = dx+dy, e2; /* error value e_xy */
+;  
+;    for(;;){  /* loop */
+;       setPixel(x0,y0);
+;       if (x0==x1 && y0==y1) break;
+;       e2 = 2*err;
+;       if (e2 >= dy) { err += dy; x0 += sx; } /* e_xy+e_x > 0 */
+;       if (e2 <= dx) { err += dx; y0 += sy; } /* e_xy+e_y < 0 */
+;    }
+; }
 
-;
-;	p1	Screen2D	<20d, 10d>
-;	p2	Screen2D	<100d, 70d>
-;
-		int 3
+;	p1	Screen2D	<2d, 2d>
+;	p2	Screen2D	<30d, 100d>
+		pusha
 
 		mov	ax, word ptr [DI.SC_X]
-		sub	ax, word ptr [SI.SC_X]	; AX = dx = p2.x - p1.x
-
-		jge	@@dont_swap_points		
-		xchg	si, di
-		neg	ax
-
-@@dont_swap_points:
-		mov	bx, word ptr [DI.SC_Y]
-		sub	bx, word ptr [SI.SC_Y]	
-		shl	bx, 1			; BX = 2dy = 2 * (p2.y - p1.y)
-
-		mov	dx, bx
-		sub	dx, ax			; D = 2dy - dx
-		shl	ax, 1			; dx *= 2	
+		sub	ax, word ptr [SI.SC_X]		; AX =  p2.x - p1.x
 		
-		push	si
-		mov	cx, word ptr [SI.SC_Y]	; y = p1.y
-		mov	si, offset cur_coords
-		mov	word ptr [SI.SC_Y], cx
-		pop	si
+		mov	word ptr [line_sx], 1
+		cmp	ax, 0
+		jg	@@positive_sx
+		mov	word ptr [line_sx], -1
 
-		mov	cx, word ptr [SI.SC_X]	; x = p1.x
-		mov	si, offset cur_coords
+	@@positive_sx:	
+		mov	dx, ax   
+		sar	dx, 15  
+		xor	ax, dx 
+		sub	ax, dx				; ax=abs(ax)
+		mov	word ptr [line_dx], ax
 
+		mov	bx, word ptr [DI.SC_Y]		; BX = = p2.y - p1.y
+		sub	bx, word ptr [SI.SC_Y]	
+
+		mov	word ptr [line_sy], 1
+		cmp	bx, 0
+		jg	@@positive_sy
+		mov	word ptr [line_sy], -1
+
+	@@positive_sy:
+		mov	dx, bx   
+		sar	dx, 15  
+		xor	bx, dx 
+		sub	bx, dx			
+		neg	bx				; bx=-abs(dy)
+		mov	word ptr [line_dy], bx
+
+		mov	cx, ax 
+		add	cx, bx			
+		mov	word ptr [line_error], cx		; error = dx + dy
+
+		push	es di
+		push	ds
+		pop	es				; es = ds
+		mov	di, offset cur_coords
+		movsw
+		movsw
+		mov	si, offset cur_coords		; copy SI to cur_coords and set SI to it
+		pop	di es
+		
 		int 3
 
-@@line_loop:
-		mov	[si.SC_X], cx
-
+	@@line_loop:
 		push	ax
-		xor	ax, ax
-		mov	al, 0ch
-		call	draw_point		; set color and draw
+		mov	ax, COLOR
+		call	draw_point
 		pop	ax
 
-		cmp	dx, 0
-		jle	@@less			; D <= 0
-		
-		push	bx
-		mov	bx, word ptr [si.SC_Y]
-		inc	bx
-		mov	word ptr [si.SC_Y], bx	; y++
-		pop	bx
-		
-		sub	dx, ax			; D -= 2dx
-@@less:
-		add	dx, bx			; D += 2dy
+		mov	cx, word ptr [di.SC_X]
+		xor	cx, word ptr [si.SC_X]
+		mov	dx, word ptr [di.SC_Y]
+		xor	dx, word ptr [si.SC_Y]
+		or	cx, dx
+		test	cx, cx				; compare x0 == x1 && y0 == y1
+		jz	@@loop_end
+	
+		mov	dx, word ptr [line_error]
+		shl	dx, 1				; error2 = 2 * error
 
-		cmp	cx, word ptr [DI.SC_X]	; while(x < p2.x)
-		jle	@@line_loop
-		
-		int 3
+		cmp	dx, bx	; error2 >= dy
+		jl	@@dont_inc_x
+
+		add	word ptr [line_error], bx	; error += dy
+		mov	cx, word ptr [line_sx]
+		add	word ptr [si.SC_X], cx		; x0 += sx
+	@@dont_inc_x:
+
+		cmp	dx, ax	; error2 <= dx
+		jg	@@dont_inc_y
+
+		add	word ptr [line_error], ax	; error += dx
+		mov	cx, word ptr [line_sy]
+		add	word ptr [si.SC_Y], cx		; y0 += sy
+	@@dont_inc_y:
+		jmp	@@line_loop
+	@@loop_end:
+
+		popa
 		ret
 
-	cur_coords	Screen2D ?
+		cur_coords	Screen2D ?
+		line_dx	dw ?
+		line_dy	dw ?
+		line_error	dw ?
+		line_sx	dw ?
+		line_sy	dw ?
+		line_error2	dw ?
 
 		endp
 
