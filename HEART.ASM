@@ -10,6 +10,14 @@ VIDEO_MODE	equ 13h
 GFX_MEM		equ 0a000h
 COLOR		equ 0ch
 BG_COLOR	equ 00h
+DELAY		equ 2000h
+
+CURVE_FACTOR	equ 0.05
+STEP_X		equ 0.02
+STEP_Y		equ 0.01
+FOV_ANGLE	equ 256.0
+DIST		equ 4.0
+Z_LENGTH	equ 0.25
 
 Vector3	STRUC
 	X	dd ?
@@ -22,9 +30,12 @@ Screen2D	STRUC
 	SC_Y	dw ?
 Screen2D	ENDS
 
+
 .code
 org 100h
 
+; ---------------------------------------
+; Entrypoint
 Start:
 	call	init_gfx
 	call	init_heart
@@ -35,27 +46,25 @@ Start:
 	call	exit_0
 
 
-	p1	Screen2D	<2d, 2d>
-	p2	Screen2D	<30d, 100d>
-
 
 ; ---------------------------------------
-; Waits for N microseconds
+; Waits for DELAY microseconds
 ; INPUT:	None
 ; OUTPUT:	None
 ; DESTROYS:	None
-delay		proc
+render_delay		proc
 		push	ax cx dx
 
 		xor	cx, cx
 		xor	ax, ax
 		mov	ah, 86h
-		mov	dx, 2000h
+		mov	dx, DELAY
 		int	15h
 		
 		pop	dx cx ax
 		ret
 		endp
+
 
 ; ---------------------------------------
 ; Clears the screen for mode 13h
@@ -77,16 +86,51 @@ clear_screen	proc
 		endp
 
 
+
 ; ---------------------------------------
-; Main drawing procedure
-; INPUT:	
-; OUTPUT:	
-; DESTROYS:	
+; Rendering macro
+; INPUT:	FROM - starting pos array, TO - destination pos array
+; OUTPUT:	Renders lines on the screen according to the arguments provided
+; DESTROYS:	AX BX CX SI DI
+RENDER		macro	FROM, TO
+		LOCAL	@@render_loop
+
+		xor	cx, cx
+@@render_loop:
+		mov	ax, cx
+		inc	ax
+		mov	bx, VERTEX_CNT
+		call	modulo			; DX = (i + 1) % vertex_cnt (next)
+
+		mov	di, offset FROM
+		mov	ax, dx
+		mul	word ptr [SCREEN2D_SZ]
+		add	di, ax			; si = proj_front + dx * sz 
+
+		mov	si, offset TO
+		mov	ax, cx
+		mul	word ptr [SCREEN2D_SZ]
+		add	si, ax			; di = proj_front + cx * sz 
+
+		xor	ax, ax
+		mov	al, COLOR
+		call	draw_line		; draw(proj_front[i], proj_front[i + 1 % n])
+
+		inc	cx
+		cmp	cx, VERTEX_CNT
+		jl	@@render_loop
+		
+		endm
+
+
+; ---------------------------------------
+; Main drawing procedure 
+; INPUT:	ES - video segment, heart_front (GLOBAL VAR) - heart vertices
+; OUTPUT:	Renders graphical representation of heart on the screen
+; DESTROYS:	AX BX CX DX SI DI
 draw		proc
-	
 @@main_loop:
-	xor	bx, bx
-	fld	dword ptr [angle_x]
+	fld	dword ptr [angle_x]		; increment the rotation angle
 	fadd	dword ptr [angle_step_x]
 	fstp	dword ptr [angle_x]
 
@@ -94,146 +138,65 @@ draw		proc
 	fadd	dword ptr [angle_step_y]
 	fstp	dword ptr [angle_y]
 
+	xor	bx, bx
 	@@projection_loop:
-			; project front face
-			mov	si, offset heartFront 
-			mov	ax, bx
-			mul	word ptr [VECTOR3_SZ]
-			add	si, ax			
-			mov	di, offset vFront
-			call	copy_vector3		; vFront = heartFront[i]
+						; project front face
+		mov	si, offset heart_front 
+		mov	ax, bx
+		mul	word ptr [VECTOR3_SZ]
+		add	si, ax			
+		mov	di, offset vec_front
+		call	copy_vector3		; vec_front = heart_front[i]
 
-			mov	si, di
-			call	rotate_y		; vFront = rotateY(vFront, angle)
-			call	rotate_x		; vFront = rotateX(vFront, angle)
+		mov	si, di
+		call	rotate_y		; vec_front = rotateY(vec_front, angle)
+		call	rotate_x		; vec_front = rotateX(vec_front, angle)
 
-			mov	di, offset projFront
-			mov	ax, bx
-			mul	word ptr [SCREEN2D_SZ]
-			add	di, ax			; di = projFront + bx * sz 
+		mov	di, offset proj_front
+		mov	ax, bx
+		mul	word ptr [SCREEN2D_SZ]
+		add	di, ax			; di = proj_front + bx * sz 
+		call	project
 
-			call	project
+						; project back face
+		mov	si, offset heart_front 
+		mov	ax, bx
+		mul	word ptr [VECTOR3_SZ]
+		add	si, ax			
+		mov	di, offset vec_back
+		call	copy_vector3		; vec_back = heart_front[i]
 
+		fld	dword ptr [di.Z]
+		fchs
+		fstp	dword ptr [di.Z]	; vec_back.Z = -vec_back.Z
 
-			; project back face
-			mov	si, offset heartFront 
-			mov	ax, bx
-			mul	word ptr [VECTOR3_SZ]
-			add	si, ax			
-			mov	di, offset vBack
-			call	copy_vector3		; vBack = heartFront[i]
+		mov	si, di
+		call	rotate_y		; vec_back = rotateY(vec_front, angle)
+		call	rotate_x		; vec_back = rotateX(vec_front, angle)
 
-			fld	dword ptr [di.Z]
-			fchs
-			fstp	dword ptr [di.Z]	; vBack.Z = -vBack.Z
-
-			mov	si, di
-			call	rotate_y		; vBack = rotateY(vFront, angle)
-			call	rotate_x		; vBack = rotateX(vFront, angle)
-
-			mov	di, offset projBack
-			mov	ax, bx
-			mul	word ptr [SCREEN2D_SZ]
-			add	di, ax			; di = projBack + bx * sz 
-
-			call	project
+		mov	di, offset proj_back
+		mov	ax, bx
+		mul	word ptr [SCREEN2D_SZ]
+		add	di, ax			; di = proj_back + bx * sz 
+		call	project
 
 
-			inc	bx
-			cmp	bx, VERTEX_CNT
-			jle	@@projection_loop
+		inc	bx
+		cmp	bx, VERTEX_CNT
+		jle	@@projection_loop
 	
+
 	call	clear_screen
-	; Render lines
-	xor	cx, cx
-	@@front_render_loop:
-		mov	ax, cx
-		inc	ax
-		mov	bx, VERTEX_CNT
-		call	modulo			; DX = (i + 1) % vertex_cnt (next)
 
-		mov	di, offset projFront
-		mov	ax, dx
-		mul	word ptr [SCREEN2D_SZ]
-		add	di, ax			; si = projFront + dx * sz 
+	RENDER	proj_front, proj_front
+	RENDER	proj_back, proj_back
+	RENDER	proj_front, proj_back
 
-		mov	si, offset projFront
-		mov	ax, cx
-		mul	word ptr [SCREEN2D_SZ]
-		add	si, ax			; di = projFront + cx * sz 
-
-		xor	ax, ax
-		mov	al, COLOR
-		call	draw_line		; draw(projFront[i], projFront[i + 1 % n])
-
-		inc	cx
-		cmp	cx, VERTEX_CNT
-		jl	@@front_render_loop
-
-
-	xor	cx, cx
-	@@back_render_loop:
-		mov	ax, cx
-		inc	ax
-		mov	bx, VERTEX_CNT
-		call	modulo			; DX = (i + 1) % vertex_cnt (next)
-
-		mov	di, offset projBack
-		mov	ax, dx
-		mul	word ptr [SCREEN2D_SZ]
-		add	di, ax			; si = projBack + dx * sz 
-
-		mov	si, offset projBack
-		mov	ax, cx
-		mul	word ptr [SCREEN2D_SZ]
-		add	si, ax			; di = projBack + cx * sz 
-
-		xor	ax, ax
-		mov	al, COLOR
-		call	draw_line		; draw(projBack[i], projBack[i + 1 % n])
-
-		inc	cx
-		cmp	cx, VERTEX_CNT
-		jl	@@back_render_loop
-
-
-	xor	cx, cx
-	@@intertwined_render_loop:
-		mov	ax, cx
-		inc	ax
-		mov	bx, VERTEX_CNT
-		call	modulo			; DX = (i + 1) % vertex_cnt (next)
-
-		mov	di, offset projFront
-		mov	ax, dx
-		mul	word ptr [SCREEN2D_SZ]
-		add	di, ax			; si = projBack + dx * sz 
-
-		mov	si, offset projBack
-		mov	ax, cx
-		mul	word ptr [SCREEN2D_SZ]
-		add	si, ax			; di = projBack + cx * sz 
-
-		xor	ax, ax
-		mov	al, COLOR
-		call	draw_line		; draw(projBack[i], projBack[i + 1 % n])
-
-		inc	cx
-		cmp	cx, VERTEX_CNT
-		jl	@@intertwined_render_loop
-	
-
-	
-	
-
-	call	delay
+	call	render_delay
 	jmp	@@main_loop
 
 	ret
-
-	vFront	Vector3 <>
-	vBack	Vector3 <>
-		endp
+	endp
 
 
 ; ---------------------------------------
@@ -243,8 +206,8 @@ draw		proc
 ; DESTROYS:	None
 pos_to_pixel	proc
 		push	ax bx dx
-		; pos = y * width + x
-		mov	ax, word ptr [SI.SC_Y]
+		
+		mov	ax, word ptr [SI.SC_Y]			; pos = y * width + x
 		mov	bx, SCREEN_WIDTH
 		mul	bx
 		add	ax, word ptr [SI.SC_X]
@@ -430,10 +393,10 @@ copy_screen2d	proc
 
 
 ; ---------------------------------------
-; Calculate the heart shape and fill heartFront vertex array
+; Calculate the heart shape and fill heart_front vertex array
 ; INPUT:	None
-; OUTPUT:	
-; DESTROYS:	
+; OUTPUT:	Initializes heart_front Vector3 array with heart vertices
+; DESTROYS:	None
 init_heart	proc
 		push	cx dx si di bx
 
@@ -461,7 +424,7 @@ init_heart	proc
 
 		mov	ax, bx
 		mul	word ptr [VECTOR3_SZ]
-		add	ax, offset heartFront
+		add	ax, offset heart_front
 		mov	di, ax
 		fstp	dword ptr [di]
 
@@ -496,14 +459,14 @@ init_heart	proc
 
 		mov	ax, bx
 		mul	word ptr [VECTOR3_SZ]
-		add	ax, offset heartFront.Y
+		add	ax, offset heart_front.Y
 		mov	di, ax
 		fstp	dword ptr [di]
 
 
 		mov	ax, bx
 		mul	word ptr [VECTOR3_SZ]
-		add	ax, offset heartFront.Z
+		add	ax, offset heart_front.Z
 		mov	di, ax
 		mov	si, offset depth
 		call	copy_dword				; copy Z
@@ -647,10 +610,6 @@ rotate_y	proc
 		endp
 
 
-
-
-
-
 ; ---------------------------------------
 ; Sets up video mode and ES register
 ; INPUT:	None
@@ -695,57 +654,46 @@ wait_for_key	proc
 
 
 .data
-	fov		    dd  256.0
-	distance	    dd  4.0
+		angle_step_x		dd  STEP_X
+		angle_step_y		dd  STEP_Y
+		fov			dd  FOV_ANGLE
+		distance		dd  DIST
+		depth			dd  Z_LENGTH
+		curve_scale		dd  CURVE_FACTOR
 
-	angle_x		    dd  0.0
-	angle_step_x	    dd  0.02
+		curve_param_x1		dw  16d
+		curve_param_y1		dw  13d
+		curve_param_y2		dw  5d
+		curve_param_y3		dw  2d
+		curve_param_y4		dw  2d
+		curve_param_y5		dw  3d
+		curve_param_y6		dw  4d
 
-	angle_y		    dd  0.0
-	angle_step_y	    dd  0.01
+		heart_front		Vector3 VERTEX_CNT dup(?)
+		proj_front		Screen2D VERTEX_CNT dup(?)
+		proj_back		Screen2D VERTEX_CNT dup(?)
+		cur_coords		Screen2D  ?
+		vec_front		Vector3 <>
+		vec_back		Vector3 <>
+		factor			dd  ?
+		line_dx			dw  ?
+		line_dy			dw  ?
+		line_error		dw  ?
+		line_sx			dw  ?
+		line_sy			dw  ?
+		line_error2		dw  ?
+		heart_i			dw  ?
+		curve_t			dd  ?
+		cached_angle_sin	dd  ?
+		cached_angle_cos	dd  ?
+		angle_x			dd  0.0
+		angle_y			dd  0.0
 
-	depth		    dd	0.25
-	curve_scale	    dd	0.05
+		SCREEN_WIDTH_HALVED	dw  SCREEN_WIDTH / 2d
+		SCREEN_HEIGHT_HALVED	dw  SCREEN_HEIGHT / 2d
+		VECTOR3_SZ		dw  SIZE Vector3
+		SCREEN2D_SZ		dw  SIZE Screen2D
+		heart_vertex_cnt	dw  VERTEX_CNT
 
-	cached_angle_sin    dd	?
-	cached_angle_cos    dd	?
-
-	SCREEN_WIDTH_HALVED	dw  SCREEN_WIDTH / 2d
-	SCREEN_HEIGHT_HALVED	dw  SCREEN_HEIGHT / 2d
-
-	heartFront	Vector3 VERTEX_CNT dup(?)
-	projFront	Screen2D VERTEX_CNT dup(?)
-	projBack	Screen2D VERTEX_CNT dup(?)
-
-
-	testProjected	Screen2D <0d, 0d>
-
-	factor		dd  ?
-	VECTOR3_SZ	dw	SIZE Vector3
-	SCREEN2D_SZ	dw	SIZE Screen2D
-
-	test_point	Screen2D <280d, 15d>
-
-	
-	cur_coords	Screen2D ?
-	line_dx	dw ?
-	line_dy	dw ?
-	line_error	dw ?
-	line_sx	dw ?
-	line_sy	dw ?
-	line_error2	dw ?
-
-heart_i		 dw  ?
-heart_vertex_cnt dw  VERTEX_CNT
-
-curve_t		dd  ?
-curve_param_x1	dw  16
-
-curve_param_y1	dw  13
-curve_param_y2	dw  5
-curve_param_y3	dw  2
-curve_param_y4	dw  2
-curve_param_y5	dw  3
-curve_param_y6	dw  4
 END Start
 
