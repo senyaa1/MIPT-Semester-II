@@ -9,6 +9,7 @@ VERTEX_CNT	equ 100d
 VIDEO_MODE	equ 13h
 GFX_MEM		equ 0a000h
 COLOR		equ 0ch
+BG_COLOR	equ 00h
 
 Vector3	STRUC
 	X	dd ?
@@ -26,11 +27,8 @@ org 100h
 
 Start:
 	call	init_gfx
-;	call	init_heart
+	call	init_heart
 
-	; mov	si, offset heartFront
-	; mov	di, offset testProjected
-	; call	project
 	call	draw
 
 	call	wait_for_key
@@ -42,6 +40,44 @@ Start:
 
 
 ; ---------------------------------------
+; Waits for N microseconds
+; INPUT:	None
+; OUTPUT:	None
+; DESTROYS:	None
+delay		proc
+		push	ax cx dx
+
+		xor	cx, cx
+		xor	ax, ax
+		mov	ah, 86h
+		mov	dx, 2000h
+		int	15h
+		
+		pop	dx cx ax
+		ret
+		endp
+
+; ---------------------------------------
+; Clears the screen for mode 13h
+; INPUT:	None
+; OUTPUT:	None
+; DESTROYS:	None
+clear_screen	proc
+		push	ax cx di
+
+		cld
+		xor	di, di
+		mov	al, BG_COLOR
+		mov	ah, BG_COLOR
+		mov	cx, (SCREEN_WIDTH * SCREEN_HEIGHT) / 2d		; amount of operations (/2 since storing words)
+	rep	stosw
+
+		pop	di cx ax
+		ret
+		endp
+
+
+; ---------------------------------------
 ; Main drawing procedure
 ; INPUT:	
 ; OUTPUT:	
@@ -50,7 +86,16 @@ draw		proc
 	
 @@main_loop:
 	xor	bx, bx
+	fld	dword ptr [angle_x]
+	fadd	dword ptr [angle_step_x]
+	fstp	dword ptr [angle_x]
+
+	fld	dword ptr [angle_y]
+	fadd	dword ptr [angle_step_y]
+	fstp	dword ptr [angle_y]
+
 	@@projection_loop:
+			; project front face
 			mov	si, offset heartFront 
 			mov	ax, bx
 			mul	word ptr [VECTOR3_SZ]
@@ -58,10 +103,9 @@ draw		proc
 			mov	di, offset vFront
 			call	copy_vector3		; vFront = heartFront[i]
 
-;			mov	si, di
-;			call	rotate_y		; vFront = rotateY(vFront, angle)
-;			mov	si, di
-;			call	rotate_x		; vFront = rotateX(vFront, angle)
+			mov	si, di
+			call	rotate_y		; vFront = rotateY(vFront, angle)
+			call	rotate_x		; vFront = rotateX(vFront, angle)
 
 			mov	di, offset projFront
 			mov	ax, bx
@@ -70,13 +114,39 @@ draw		proc
 
 			call	project
 
+
+			; project back face
+			mov	si, offset heartFront 
+			mov	ax, bx
+			mul	word ptr [VECTOR3_SZ]
+			add	si, ax			
+			mov	di, offset vBack
+			call	copy_vector3		; vBack = heartFront[i]
+
+			fld	dword ptr [di.Z]
+			fchs
+			fstp	dword ptr [di.Z]	; vBack.Z = -vBack.Z
+
+			mov	si, di
+			call	rotate_y		; vBack = rotateY(vFront, angle)
+			call	rotate_x		; vBack = rotateX(vFront, angle)
+
+			mov	di, offset projBack
+			mov	ax, bx
+			mul	word ptr [SCREEN2D_SZ]
+			add	di, ax			; di = projBack + bx * sz 
+
+			call	project
+
+
 			inc	bx
 			cmp	bx, VERTEX_CNT
 			jle	@@projection_loop
 	
+	call	clear_screen
 	; Render lines
 	xor	cx, cx
-	@@render_loop:
+	@@front_render_loop:
 		mov	ax, cx
 		inc	ax
 		mov	bx, VERTEX_CNT
@@ -94,21 +164,75 @@ draw		proc
 
 		xor	ax, ax
 		mov	al, COLOR
-		int 3
 		call	draw_line		; draw(projFront[i], projFront[i + 1 % n])
-
 
 		inc	cx
 		cmp	cx, VERTEX_CNT
-		jl	@@render_loop
+		jl	@@front_render_loop
+
+
+	xor	cx, cx
+	@@back_render_loop:
+		mov	ax, cx
+		inc	ax
+		mov	bx, VERTEX_CNT
+		call	modulo			; DX = (i + 1) % vertex_cnt (next)
+
+		mov	di, offset projBack
+		mov	ax, dx
+		mul	word ptr [SCREEN2D_SZ]
+		add	di, ax			; si = projBack + dx * sz 
+
+		mov	si, offset projBack
+		mov	ax, cx
+		mul	word ptr [SCREEN2D_SZ]
+		add	si, ax			; di = projBack + cx * sz 
+
+		xor	ax, ax
+		mov	al, COLOR
+		call	draw_line		; draw(projBack[i], projBack[i + 1 % n])
+
+		inc	cx
+		cmp	cx, VERTEX_CNT
+		jl	@@back_render_loop
+
+
+	xor	cx, cx
+	@@intertwined_render_loop:
+		mov	ax, cx
+		inc	ax
+		mov	bx, VERTEX_CNT
+		call	modulo			; DX = (i + 1) % vertex_cnt (next)
+
+		mov	di, offset projFront
+		mov	ax, dx
+		mul	word ptr [SCREEN2D_SZ]
+		add	di, ax			; si = projBack + dx * sz 
+
+		mov	si, offset projBack
+		mov	ax, cx
+		mul	word ptr [SCREEN2D_SZ]
+		add	si, ax			; di = projBack + cx * sz 
+
+		xor	ax, ax
+		mov	al, COLOR
+		call	draw_line		; draw(projBack[i], projBack[i + 1 % n])
+
+		inc	cx
+		cmp	cx, VERTEX_CNT
+		jl	@@intertwined_render_loop
 	
-		ret
-;	jmp @@main_loop
+
+	
+	
+
+	call	delay
+	jmp	@@main_loop
 
 	ret
 
-	vFront	Vector3 ?
-	vBack	Vector3 ?
+	vFront	Vector3 <>
+	vBack	Vector3 <>
 		endp
 
 
@@ -146,33 +270,6 @@ draw_point	proc
 		ret
 		endp
 
-; ---------------------------------------
-;; Swap word at offset 0 (SC_X) with word at offset 2 (SC_Y)
-; INPUT:	SI - Screen2D projection coords
-; OUTPUT:	None
-; DESTROYS:	None
-swapXY_p1	proc
-		mov	ax, word ptr [si.SC_X]       
-		mov	dx, word ptr [si.SC_Y]     
-		mov	word ptr [si.SC_X], dx
-		mov	word ptr [si.SC_Y], ax
-
-		ret
-		endp
-
-; ---------------------------------------
-;; Swap word at offset 0 (SC_X) with word at offset 2 (SC_Y)
-; INPUT:	DI - Screen2D projection coords
-; OUTPUT:	None
-; DESTROYS:	None
-swapXY_p2	proc
-		mov	ax, word ptr [di.SC_X]       
-		mov	dx, word ptr [di.SC_Y]     
-		mov	word ptr [di.SC_X], dx
-		mov	word ptr [di.SC_Y], ax
-
-		ret
-		endp
 
 ; ---------------------------------------
 ; Draws a line between 2 points using Bresenham's line algorithm
@@ -180,23 +277,6 @@ swapXY_p2	proc
 ; OUTPUT:	None
 ; DESTROYS:	None
 draw_line	proc
-; void plotLine(int x0, int y0, int x1, int y1)
-; {
-;    int dx =  abs(x1-x0), sx = x0<x1 ? 1 : -1;
-;    int dy = -abs(y1-y0), sy = y0<y1 ? 1 : -1; 
-;    int err = dx+dy, e2; /* error value e_xy */
-;  
-;    for(;;){  /* loop */
-;       setPixel(x0,y0);
-;       if (x0==x1 && y0==y1) break;
-;       e2 = 2*err;
-;       if (e2 >= dy) { err += dy; x0 += sx; } /* e_xy+e_x > 0 */
-;       if (e2 <= dx) { err += dx; y0 += sy; } /* e_xy+e_y < 0 */
-;    }
-; }
-
-;	p1	Screen2D	<2d, 2d>
-;	p2	Screen2D	<30d, 100d>
 		pusha
 
 		mov	ax, word ptr [DI.SC_X]
@@ -243,7 +323,6 @@ draw_line	proc
 		mov	si, offset cur_coords		; copy SI to cur_coords and set SI to it
 		pop	di es
 		
-		int 3
 
 	@@line_loop:
 		push	ax
@@ -282,15 +361,6 @@ draw_line	proc
 
 		popa
 		ret
-
-		cur_coords	Screen2D ?
-		line_dx	dw ?
-		line_dy	dw ?
-		line_error	dw ?
-		line_sx	dw ?
-		line_sy	dw ?
-		line_error2	dw ?
-
 		endp
 
 
@@ -359,10 +429,8 @@ copy_screen2d	proc
 		endp
 
 
-
-
 ; ---------------------------------------
-; Calculate the heart shape and fill heartFront, heartBack vertex array
+; Calculate the heart shape and fill heartFront vertex array
 ; INPUT:	None
 ; OUTPUT:	
 ; DESTROYS:	
@@ -372,93 +440,80 @@ init_heart	proc
 		xor	bx, bx
 		mov	cx, VERTEX_CNT
 
-		mov	word ptr [cnt], cx 
 @@heart_loop:
-		mov	word ptr [i], bx
-		fild	word ptr [cnt]
+		mov	word ptr [heart_i], bx
+		fild	word ptr [heart_vertex_cnt]
 		fldpi
 		fldpi
 		faddp	st(1), st(0)
-		fild	word ptr [i]
-		fmulp	st(1), st(0); 2 * pi * i
+		fild	word ptr [heart_i]
+		fmulp	st(1), st(0)				; 2 * pi * i
 		fdivrp	st(1), st(0)
-		fst	dword ptr [curve_t] ; (2 * pi * i) / vertex_cnt
+		fst	dword ptr [curve_t]			; (2 * pi * i) / vertex_cnt
 
 		fsin
 		fld	st(0)
 		fmul	st(1), st(0)
-		fmulp				    
+		fmul						; sin^3(x)
 		fimul	word ptr [curve_param_x1]
 		fld	dword ptr [curve_scale]
-		fmulp
-		;fstp	dword ptr [curve_x]		; x1 * sin^3(t) * factor
+		fmulp						; x1 * sin^3(t) * factor
 
 		mov	ax, bx
 		mul	word ptr [VECTOR3_SZ]
-		add	ax, offset heartFront.X
+		add	ax, offset heartFront
 		mov	di, ax
 		fstp	dword ptr [di]
 
+
 		fld	dword ptr [curve_t]
 		fcos					
-		fimul	word ptr [curve_param_y1]
+		fimul	word ptr [curve_param_y1]		; y1 * cos(t)
 
 		fld	dword ptr [curve_t]
 		fimul	word ptr [curve_param_y3]
 		fcos					
-		fimul	word ptr [curve_param_y2]
-		fsub	st(1), st(0)
+		fimul	word ptr [curve_param_y2]		; y2 * cos(y3t)
+
+		fsubp	st(1), st(0)				; y1*cos(t) - y2 * cos(y3t)
 
 		fld	dword ptr [curve_t]
-		fimul	word ptr [curve_param_y5]
-		fcos					
-		fimul	word ptr [curve_param_y4]
+		fimul	word ptr [curve_param_y5]		
+		fcos						
+		fimul	word ptr [curve_param_y4]		; y4 * cos(y5t)
+
+		fsubp	st(1), st(0)				; y1*cos(t) - y2*cos(3t) - y4 * cos(y5t)
 
 		fld	dword ptr [curve_t]
 		fimul	word ptr [curve_param_y6]	
-		fcos				
-		fsub	st(1), st(0)
+		fcos						; cos(y6t)
 
-		fsub	st(1), st(0)
+		fsubp	st(1), st(0)				; y1*cos(t) - y2*cos(3t) - y4 * cos(y5t) - cos(y6t)
+
 		fld	dword ptr [curve_scale]
 		fmulp
+
 
 		mov	ax, bx
 		mul	word ptr [VECTOR3_SZ]
 		add	ax, offset heartFront.Y
 		mov	di, ax
 		fstp	dword ptr [di]
-		;fstp	dword ptr [curve_y]
 
 
+		mov	ax, bx
+		mul	word ptr [VECTOR3_SZ]
+		add	ax, offset heartFront.Z
+		mov	di, ax
 		mov	si, offset depth
-		call	copy_dword	; copies Z depth
-
+		call	copy_dword				; copy Z
 
 		inc	bx
 		cmp	bx, VERTEX_CNT
 		jnz	@@heart_loop
 
-
 		pop	bx di si dx cx
-		ret
-
-i		dw  ?
-cnt		dw  ?
-
-curve_t		dd  ?
-curve_x		dd  ?
-curve_y		dd  ?
-
-curve_param_x1	dw  16
-
-curve_param_y1	dw  13
-curve_param_y2	dw  5
-curve_param_y3	dw  2
-curve_param_y4	dw  2
-curve_param_y5	dw  3
-curve_param_y6	dw  4
-	
+		ret	
 		endp
 
 
@@ -497,14 +552,14 @@ project		proc
 
 ; ---------------------------------------
 ; Caches sin and cos values for the current angle var
-; INPUT:	angle (GLOBAL VAR)
+; INPUT:	BX - angle ptr
 ; OUTPUT:	cached_angle_sin (GLOBAL VAR), cached_angle_cos (GLOBAL_VAR)
 ; DESTROYS:	None
 cache_trig	proc
-		fld	dword ptr [angle]
+		fld	dword ptr [bx]
 		fsincos
-		fstp	dword ptr [cached_angle_sin]
 		fstp	dword ptr [cached_angle_cos]
+		fstp	dword ptr [cached_angle_sin]
 
 		ret
 		endp
@@ -517,10 +572,11 @@ cache_trig	proc
 ; OUTPUT:	Outputs the rotated vector into the ptr provided in DI register
 ; DESTROYS:	None
 rotate_x	proc
-		push	es si di
+		push	bx es si di
 		push	ds
 		pop	es
-
+	
+		mov	bx, offset angle_x
 		call	cache_trig
 
 		fld	dword ptr [SI.Y]
@@ -534,7 +590,7 @@ rotate_x	proc
 
 		fld	dword ptr [SI.Y]
 		fld	dword ptr [cached_angle_sin]
-		fmulp   st(1), st(0)			; st(0) - y * cos(angle)
+		fmulp   st(1), st(0)			; st(0) - y * sin(angle)
 		fld	dword ptr [SI.Z]
 		fld	dword ptr [cached_angle_cos]
 		fmulp	st(1), st(0)			
@@ -542,9 +598,9 @@ rotate_x	proc
 
 		fstp	dword ptr [DI.Z]		; rotated.z = y * sin(angle) + z * cos(angle)
 		fstp	dword ptr [DI.Y]		; rotated.y = y * cos(angle) - z * sin(angle)
-		call	copy_dword
+		call	copy_dword			; rotated.x = x
 
-		pop	di si es
+		pop	di si es bx
 		ret
 		endp
 
@@ -555,10 +611,11 @@ rotate_x	proc
 ; OUTPUT:	Outputs the rotated vector into the ptr provided in DI register
 ; DESTROYS:	None
 rotate_y	proc
-		push	es si di
+		push	bx es si di
 		push	ds
 		pop	es
 
+		mov	bx, offset angle_y
 		call	cache_trig
 
 		fld	dword ptr [SI.X]
@@ -584,8 +641,8 @@ rotate_y	proc
 		add	si, Y
 		add	di, Y
 		call	copy_dword
-
-		pop	di si es
+ 
+		pop	di si es bx
 		ret
 		endp
 
@@ -640,7 +697,13 @@ wait_for_key	proc
 .data
 	fov		    dd  256.0
 	distance	    dd  4.0
-	angle		    dd  0.0
+
+	angle_x		    dd  0.0
+	angle_step_x	    dd  0.02
+
+	angle_y		    dd  0.0
+	angle_step_y	    dd  0.01
+
 	depth		    dd	0.25
 	curve_scale	    dd	0.05
 
@@ -650,110 +713,7 @@ wait_for_key	proc
 	SCREEN_WIDTH_HALVED	dw  SCREEN_WIDTH / 2d
 	SCREEN_HEIGHT_HALVED	dw  SCREEN_HEIGHT / 2d
 
-	; TestVector	Vector3	<1.5, 2.0, 3.0>
-;	heartFront	Vector3 VERTEX_CNT dup(?)
-heartFront:
-Vector3	<0, 0.25, 0.25>
-Vector3	<0.000198049, 0.254031, 0.25>
-Vector3	<0.00157503, 0.265936, 0.25>
-Vector3	<0.00526343, 0.285161, 0.25>
-Vector3	<0.0123045, 0.310814, 0.25>
-Vector3	<0.0236068, 0.341703, 0.25>
-Vector3	<0.0399093, 0.376395, 0.25>
-Vector3	<0.0617509, 0.413282, 0.25>
-Vector3	<0.0894469, 0.450653, 0.25>
-Vector3	<0.123073, 0.486773, 0.25>
-Vector3	<0.16246, 0.519959, 0.25>
-Vector3	<0.207193, 0.548652, 0.25>
-Vector3	<0.256626, 0.57148, 0.25>
-Vector3	<0.309896, 0.58731, 0.25>
-Vector3	<0.365957, 0.59529, 0.25>
-Vector3	<0.423607, 0.594871, 0.25>
-Vector3	<0.48153, 0.585815, 0.25>
-Vector3	<0.538342, 0.568188, 0.25>
-Vector3	<0.592634, 0.54234, 0.25>
-Vector3	<0.643022, 0.508866, 0.25>
-Vector3	<0.688191, 0.468566, 0.25>
-Vector3	<0.726944, 0.422389, 0.25>
-Vector3	<0.758238, 0.371376, 0.25>
-Vector3	<0.781224, 0.31661, 0.25>
-Vector3	<0.795273, 0.259151, 0.25>
-Vector3	<0.8, 0.2, 0.25>
-Vector3	<0.795273, 0.140048, 0.25>
-Vector3	<0.781224, 0.0800514, 0.25>
-Vector3	<0.758238, 0.0206151, 0.25>
-Vector3	<0.726944, -0.0378178, 0.25>
-Vector3	<0.688191, -0.0949594, 0.25>
-Vector3	<0.643022, -0.150661, 0.25>
-Vector3	<0.592634, -0.20489, 0.25>
-Vector3	<0.538342, -0.257697, 0.25>
-Vector3	<0.48153, -0.309183, 0.25>
-Vector3	<0.423607, -0.359461, 0.25>
-Vector3	<0.365957, -0.408622, 0.25>
-Vector3	<0.309896, -0.456704, 0.25>
-Vector3	<0.256626, -0.503664, 0.25>
-Vector3	<0.207193, -0.549366, 0.25>
-Vector3	<0.16246, -0.593566, 0.25>
-Vector3	<0.123073, -0.63592, 0.25>
-Vector3	<0.0894469, -0.675988, 0.25>
-Vector3	<0.061751, -0.713256, 0.25>
-Vector3	<0.0399093, -0.747158, 0.25>
-Vector3	<0.0236068, -0.777113, 0.25>
-Vector3	<0.0123045, -0.80255, 0.25>
-Vector3	<0.00526343, -0.822946, 0.25>
-Vector3	<0.00157503, -0.837858, 0.25>
-Vector3	<0.000198048, -0.846947, 0.25>
-Vector3	<-5.3452e-22, -0.85, 0.25>
-Vector3	<-0.00019805, -0.846946, 0.25>
-Vector3	<-0.00157503, -0.837858, 0.25>
-Vector3	<-0.00526342, -0.822947, 0.25>
-Vector3	<-0.0123045, -0.80255, 0.25>
-Vector3	<-0.0236068, -0.777113, 0.25>
-Vector3	<-0.0399093, -0.747159, 0.25>
-Vector3	<-0.061751, -0.713256, 0.25>
-Vector3	<-0.0894469, -0.675988, 0.25>
-Vector3	<-0.123073, -0.63592, 0.25>
-Vector3	<-0.16246, -0.593566, 0.25>
-Vector3	<-0.207193, -0.549366, 0.25>
-Vector3	<-0.256626, -0.503664, 0.25>
-Vector3	<-0.309896, -0.456704, 0.25>
-Vector3	<-0.365957, -0.408622, 0.25>
-Vector3	<-0.423607, -0.359461, 0.25>
-Vector3	<-0.48153, -0.309183, 0.25>
-Vector3	<-0.538342, -0.257697, 0.25>
-Vector3	<-0.592634, -0.20489, 0.25>
-Vector3	<-0.643022, -0.150661, 0.25>
-Vector3	<-0.688191, -0.0949595, 0.25>
-Vector3	<-0.726944, -0.0378179, 0.25>
-Vector3	<-0.758238, 0.0206151, 0.25>
-Vector3	<-0.781224, 0.0800514, 0.25>
-Vector3	<-0.795273, 0.140048, 0.25>
-Vector3	<-0.8, 0.2, 0.25>
-Vector3	<-0.795273, 0.259152, 0.25>
-Vector3	<-0.781224, 0.31661, 0.25>
-Vector3	<-0.758238, 0.371376, 0.25>
-Vector3	<-0.726944, 0.422389, 0.25>
-Vector3	<-0.688191, 0.468566, 0.25>
-Vector3	<-0.643022, 0.508866, 0.25>
-Vector3	<-0.592634, 0.54234, 0.25>
-Vector3	<-0.538342, 0.568188, 0.25>
-Vector3	<-0.48153, 0.585815, 0.25>
-Vector3	<-0.423607, 0.594871, 0.25>
-Vector3	<-0.365957, 0.59529, 0.25>
-Vector3	<-0.309897, 0.58731, 0.25>
-Vector3	<-0.256626, 0.57148, 0.25>
-Vector3	<-0.207193, 0.548653, 0.25>
-Vector3	<-0.16246, 0.519959, 0.25>
-Vector3	<-0.123073, 0.486773, 0.25>
-Vector3	<-0.0894469, 0.450653, 0.25>
-Vector3	<-0.0617509, 0.413282, 0.25>
-Vector3	<-0.0399093, 0.376395, 0.25>
-Vector3	<-0.0236068, 0.341703, 0.25>
-Vector3	<-0.0123045, 0.310814, 0.25>
-Vector3	<-0.00526342, 0.285161, 0.25>
-Vector3	<-0.00157503, 0.265936, 0.25>
-Vector3	<-0.000198047, 0.254031, 0.25>
-
+	heartFront	Vector3 VERTEX_CNT dup(?)
 	projFront	Screen2D VERTEX_CNT dup(?)
 	projBack	Screen2D VERTEX_CNT dup(?)
 
@@ -765,5 +725,27 @@ Vector3	<-0.000198047, 0.254031, 0.25>
 	SCREEN2D_SZ	dw	SIZE Screen2D
 
 	test_point	Screen2D <280d, 15d>
+
+	
+	cur_coords	Screen2D ?
+	line_dx	dw ?
+	line_dy	dw ?
+	line_error	dw ?
+	line_sx	dw ?
+	line_sy	dw ?
+	line_error2	dw ?
+
+heart_i		 dw  ?
+heart_vertex_cnt dw  VERTEX_CNT
+
+curve_t		dd  ?
+curve_param_x1	dw  16
+
+curve_param_y1	dw  13
+curve_param_y2	dw  5
+curve_param_y3	dw  2
+curve_param_y4	dw  2
+curve_param_y5	dw  3
+curve_param_y6	dw  4
 END Start
 
