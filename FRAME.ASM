@@ -1,4 +1,5 @@
 .model tiny
+.386
 .code
 org 100h
 
@@ -7,7 +8,7 @@ PSP_CMDLINE_LEN_OFFSET	equ	80h
 PSP_CMDLINE_OFFSET	equ	81h
 GFX_MEM_SEGMENT		equ	00b800h 
 GFX_MODE		equ	3h
-
+DELAY			equ	06666h
 
 FRAME_SETTINGS STRUC
 	FR_START_X		db ?
@@ -19,6 +20,7 @@ FRAME_SETTINGS STRUC
 	; FR_STR			db 128 dup(?)
 	FR_STR			db "amogus is \it is\ really real"
 	FR_STR_LEN		db 30
+	FR_DYNAMIC		db 1
 FRAME_SETTINGS ENDS
 
 
@@ -28,19 +30,24 @@ FRAME_STYLE STRUC
 FRAME_STYLE ENDS
 
 ; TODO:
-;	opening animation
 ;	properly parse arguments
 ;	parse string
 ;	parse custom styles
 ;	double-borded style
 ;	bg
+;	pair up with the graphical frame
 
 Start:		
-		call init_gfx
+		call	init_gfx
 
-		call parse_cmdline
-		call get_chars
+		call	parse_cmdline
+		call	get_chars
 
+		mov	ah, byte ptr [Current_Settings.FR_DYNAMIC]
+		test	ah, ah
+		jz	@@static
+		call draw_dynamic
+	@@static:
 		call draw_frame 
 
 		call draw_text
@@ -51,7 +58,83 @@ Start:
 		call exit
 
 
+; ---------------------------------------
+; Waits for DELAY microseconds
+; INPUT:	None
+; OUTPUT:	None
+; DESTROYS:	None
+dynamic_delay	proc
+		push	ax cx dx
 
+		xor	cx, cx
+		xor	ax, ax
+		mov	ah, 86h
+		mov	dx, DELAY
+		int	15h
+		
+		pop	dx cx ax
+		ret
+		endp
+
+
+
+
+; ---------------------------
+; Renders frame dynamically
+; Input:	Current_Settings
+; Output:	Frame on the screen
+; Destroys:	AX BX CX DX
+draw_dynamic	proc
+		mov	dl, byte ptr [Current_Settings.FR_WIDTH]
+		mov	cl, dl
+		shr	cl, 1
+		add	cl, byte ptr [Current_Settings.FR_START_X]	; cl = width / 2 + start_x
+
+		mov	dh, byte ptr [Current_Settings.FR_HEIGHT]
+		mov	ch, dh
+		shr	ch, 1
+		add	ch, byte ptr [Current_Settings.FR_START_Y]	; ch = height / 2 + start_y
+
+		mov	al, 2
+		mov	ah, 2
+@@dynamic_loop:	
+		mov	byte ptr [Current_Settings.FR_WIDTH], al
+		mov	byte ptr [Current_Settings.FR_START_X], cl
+		mov	byte ptr [Current_Settings.FR_HEIGHT], ah
+		mov	byte ptr [Current_Settings.FR_START_Y], ch
+		call	draw_frame 
+
+		call	dynamic_delay
+
+		cmp	ah, dh
+		je	@@dont_inc_y
+		inc	ah
+		inc	ah	; ah += 2
+		dec	ch	; ch--;
+	@@dont_inc_y:
+
+		cmp	al, dl
+		je	@@dont_inc_x
+		inc	al
+		inc	al	; al += 2
+		dec	cl	; cl--;
+	@@dont_inc_x:
+		
+		xor     bx, bx
+		xor     bh, ah
+		xor     bh, dh
+		xor	bl, al
+		xor	bl, dl
+		test	bx, bx	; exit loop if ah == dx && al == dl
+
+		jnz	@@dynamic_loop
+
+		ret
+		endp
+
+
+
+; ---------------------------
 ; Converts string to int, iterates over the string, until it finds non-numeric character
 ; Input:	SI - ptr to the string
 ; Output:	BX - converted integer
@@ -283,8 +366,9 @@ draw_text_line	proc
 ; Draws the frame
 ; Input:	Current_Settings
 ; Output:	None
-; Destroys:	BX
+; Destroys:	AX BX CX DX
 draw_frame	proc
+		pusha
 		mov cl, byte ptr [Current_Settings.FR_START_X]
 		mov ch, byte ptr [Current_Settings.FR_START_Y]
 		mov dl, byte ptr [Current_Settings.FR_WIDTH]
@@ -305,6 +389,7 @@ frame_loop:
 		add si, 3
 		call draw_line
 
+		popa
 		ret
 		endp
 
