@@ -13,7 +13,7 @@ VERTEX_CNT	equ 100d
 COLOR		equ 0ch
 TEXT_COLOR	equ 0fh
 BG_COLOR	equ 00h
-DELAY		equ 3000h
+DELAY		equ 2000h
 
 CURVE_FACTOR	equ 0.05
 STEP_X		equ 0.005
@@ -231,9 +231,19 @@ draw		proc
 	
 	call	clear_screen
 
+	mov	ah, 12h
+	mov	bl, 36h
+	mov	al, 01h
+	int	10h
+
 	RENDER	proj_front, proj_front
 	RENDER	proj_back, proj_back
 	RENDER	proj_front, proj_back
+
+	mov	ah, 12h
+	mov	bl, 36h
+	mov	al, 00h
+	int	10h
 
 	call	render_delay
 
@@ -745,7 +755,7 @@ wait_for_key	proc
 		SCREEN2D_SZ		dw  SIZE Screen2D
 		heart_vertex_cnt	dw  VERTEX_CNT
 
-		STRING			db "Happy Valentine's Day!!"
-		STRING_LEN		db 23
+		STRING			db "amogus is real"
+		STRING_LEN		db 14
 END Start
 

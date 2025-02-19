@@ -8,32 +8,26 @@ PSP_CMDLINE_LEN_OFFSET	equ	80h
 PSP_CMDLINE_OFFSET	equ	81h
 GFX_MEM_SEGMENT		equ	00b800h 
 GFX_MODE		equ	3h
-DELAY			equ	06666h
+DELAY			equ	04444h
 
 FRAME_SETTINGS STRUC
-	FR_START_X		db ?
-	FR_START_Y		db ?
-	FR_WIDTH		db ?
-	FR_HEIGHT		db ?
-	FR_SELECTED_STYLE	db ?
-	; FR_STR_LEN		db ?
-	; FR_STR			db 128 dup(?)
-	FR_STR			db "amogus is \it is\ really real"
-	FR_STR_LEN		db 30
+	FR_START_X		db 15
+	FR_START_Y		db 5 
+	FR_WIDTH		db 25
+	FR_HEIGHT		db 10 
 	FR_DYNAMIC		db 1
+	FR_SELECTED_STYLE	db 2
+	FR_STR_LEN		db 0
+	FR_STR			db 128d dup(?)
 FRAME_SETTINGS ENDS
 
 
 FRAME_STYLE STRUC
+	ST_COLOR		db 0ch
 	ST_CHARMAP		db 9 dup(?)
-	ST_COLOR		db ?
 FRAME_STYLE ENDS
 
 ; TODO:
-;	properly parse arguments
-;	parse string
-;	parse custom styles
-;	double-borded style
 ;	bg
 ;	pair up with the graphical frame
 
@@ -75,8 +69,6 @@ dynamic_delay	proc
 		pop	dx cx ax
 		ret
 		endp
-
-
 
 
 ; ---------------------------
@@ -133,7 +125,6 @@ draw_dynamic	proc
 		endp
 
 
-
 ; ---------------------------
 ; Converts string to int, iterates over the string, until it finds non-numeric character
 ; Input:	SI - ptr to the string
@@ -172,44 +163,170 @@ strtod		proc
 		ret
 		endp
 
-; Parses command line arguments
+parse_cmdline proc
+		push    es
+		mov     dx, ds
+		mov     es, dx
+
+		xor     dx, dx
+		mov     dl, byte ptr ds:[PSP_CMDLINE_LEN_OFFSET]
+		mov     si, PSP_CMDLINE_OFFSET
+		add     dx, si                ; DX = end pointer of the command line
+		inc     si                    ; Skip length byte
+
+		mov     di, offset Current_Settings
+
+	@@read_loop:
+	@@skip_whitespace:
+		cmp     si, dx
+		jae     @@done_parsing        ; no more characters
+		cmp     byte ptr [si], ' '
+		jne     @@token_found
+		inc     si
+		jmp     @@skip_whitespace
+
+	@@token_found:
+		mov     bl, byte ptr [si]
+		cmp     bl, ''''              ; If we see a quote, then parse a string
+		je      @@parse_string
+
+		call    strtod
+		mov     byte ptr [di], bl     ; store the parsed integer into the structure
+		inc     di                    ; advance destination for next integer
+		jmp     @@read_loop
+
+	@@parse_string:	
+		inc     si		; Skip the opening quote 
+		push	di
+
+		mov     cl, byte ptr [Current_Settings.FR_STR_LEN]
+		cmp     cl, 0
+		je      @@text_not_written    ; if FR_STR_LEN==0, copy into FR_STR
+		mov     di, offset user_style.ST_CHARMAP 		; Otherwise, copy into user_style.ST_CHARMAP:
+		jmp     @@copy_loop
+	@@text_not_written:
+		mov     di, offset Current_Settings.FR_STR
+		mov	ch, 1                 ; start our counter at 1
+		; Copy until closing quote
+	@@copy_loop:
+		mov     al, [si]
+		cmp     al, ''''
+		je      @@end_copy
+		mov     es:[di], al           ; or use STOSB (since DS=ES, you can also use MOVSB)
+		inc     di
+		inc     ch
+		inc     si
+		jmp	@@copy_loop
+	@@end_copy:
+		mov     cl, byte ptr [Current_Settings.FR_STR_LEN]
+		cmp     cl, 0
+		pop	di
+		jne     @@get_color    ;	if FR_STR_LEN==0, copy length into FR_STR_LEN, otherwise expect color for custom style
+		mov     byte ptr [Current_Settings.FR_STR_LEN], ch
+		inc     si                    ; Skip the closing quote
+		jmp     @@read_loop
+
+	@@done_parsing:
+		pop     es
+		ret
+
+	@@get_color:
+		call	parse_color
+		jmp	@@done_parsing
+		endp
+
+
+; ---------------------------
+; Parses color into user-defined styl
 ; Input:	
 ; Output:	
-; Destroys:
-parse_cmdline	proc
-		push	es
-		mov	dx, ds
-		mov	es, dx
-
-		xor	dx, dx
-		mov	dl, byte ptr ds:[PSP_CMDLINE_LEN_OFFSET]
-		mov	si, PSP_CMDLINE_OFFSET
-		add	dx, si				; DX points to the end of the string + 1
+; Destroys:	None 
+parse_color	proc
+	int 3
 		inc	si
-
-		mov	di, offset Current_Settings
-		int 3
-		xor	ax, ax
-		mov	al, ' '				; Skip whitespaces
-		cld
-@@read_loop:
-		mov	cx, -1 
-	repe	scasb
-
-		call	strtod				; BX now has the parsed integer
-		mov	byte ptr [di], bl
-		inc	di
-
-			
-		cmp	si, dx
-		jle	@@read_loop
-		
-		pop	es
-		int 3
+		call	hexstrtod
+		mov	byte ptr [user_style.ST_COLOR], bl
 		ret
 		endp
 
 
+; ---------------------------
+; Converts a hex string to int.
+; Iterates over the string (pointed to by SI) until a non-hex digit is encountered.
+; Input:	SI - pointer to the null-terminated string
+; Output:	BX - converted integer
+; Destroys:	None 
+hexstrtod	proc
+		push    ax cx dx         
+		xor     bx, bx     ; BX = 0, our running total
+
+	@@next_char:
+		lodsb              ; Load next byte from DS:SI into AL (AX = 00xx)
+
+		; Check for numeric digit '0' to '9'
+		cmp     al, '0'
+		jb      @@check_upper    ; if AL < '0', not a digit, so try letters
+		cmp     al, '9'
+		jbe     @@process_num
+
+	@@check_upper:
+		; Check for uppercase hex 'A' to 'F'
+		cmp     al, 'A'
+		jb      @@check_lower    ; if AL < 'A', not valid
+		cmp     al, 'F'
+		jbe     @@process_upper
+
+	@@check_lower:
+		; Check for lowercase hex 'a' to 'f'
+		cmp     al, 'a'
+		jb      @@exit           ; if AL < 'a', not a hex digit
+		cmp     al, 'f'
+		jbe     @@process_lower
+		jmp     @@exit           ; not a valid hex digit
+
+	@@process_num:
+		; Process digit '0'..'9'
+		mov     cx, ax         ; Save original character in CX
+		mov     ax, bx         ; AX = current total
+		mov     dx, 16d
+		mul     dx             ; Multiply BX by 16 (result in DX:AX)
+		mov     bx, ax         ; BX = previous total * 16
+		mov     ax, cx         ; Restore digit character in AX
+		sub     ax, '0'        ; Convert ASCII to numeric value (0-9)
+		add     bx, ax         ; Add the digit value to total
+		jmp     @@next_char
+
+	@@process_upper:
+		; Process uppercase hex 'A'..'F'
+		mov     cx, ax         ; Save original character in CX
+		mov     ax, bx
+		mov     dx, 16d
+		mul     dx
+		mov     bx, ax
+		mov     ax, cx
+		sub     ax, 'A'        ; Convert 'A' to 0, 'B' to 1, etc.
+		add     ax, 10         ; Adjust: 'A' represents 10
+		add     bx, ax
+		jmp     @@next_char
+
+	@@process_lower:
+		; Process lowercase hex 'a'..'f'
+		mov     cx, ax         ; Save original character in CX
+		mov     ax, bx
+		mov     dx, 16d
+		mul     dx
+		mov     bx, ax
+		mov     ax, cx
+		sub     ax, 'a'        ; Convert 'a' to 0, 'b' to 1, etc.
+		add     ax, 10         ; Adjust: 'a' represents 10
+		add     bx, ax
+		jmp     @@next_char
+
+	@@exit:
+		pop     dx cx ax           ; Restore registers
+		ret
+		endp
+	
 ; ---------------------------
 ; Waits for keypress
 ; Destroys: AH
@@ -525,11 +642,12 @@ exit		proc
 		endp
 
 .data
-	Current_Settings	FRAME_SETTINGS <15, 15, 40, 10, 2>
+	Current_Settings	FRAME_SETTINGS <20, 6, 40, 10, 1>
 styles:
 	user_style		FRAME_STYLE <>
-	frame_style1		FRAME_STYLE <"123456789", 07h>
-	frame_style2		FRAME_STYLE <"+-+| |+-+", 70h>
+	frame_style1		FRAME_STYLE <70h, "+-+| |+-+">
+	frame_style2		db 1bh, 0c9h, 0cdh, 0bbh, 0bah, 20h, 0bah, 0c8h, 0cdh, 0bch
+	frame_style3		db 1bh, 0dah, 0c4h, 0bfh, 0b3h, 20h, 0b3h, 0c0h, 0c4h, 0d9h
 
 END Start
 
