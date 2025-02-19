@@ -28,7 +28,6 @@ FRAME_STYLE STRUC
 FRAME_STYLE ENDS
 
 ; TODO:
-;	bg
 ;	pair up with the graphical frame
 
 Start:		
@@ -40,23 +39,23 @@ Start:
 		mov	ah, byte ptr [Current_Settings.FR_DYNAMIC]
 		test	ah, ah
 		jz	@@static
-		call draw_dynamic
+		call	draw_dynamic
 	@@static:
-		call draw_frame 
+		call	draw_frame 
 
-		call draw_text
+		call	draw_text
 
-		call wait_for_key
+		call	wait_for_key
 
-		xor al, al
-		call exit
+		xor	al, al
+		call	exit
 
 
 ; ---------------------------------------
 ; Waits for DELAY microseconds
-; INPUT:	None
+; INPUT:	DELAY (MACRO CONSTANT)
 ; OUTPUT:	None
-; DESTROYS:	None
+; Destroys::	None
 dynamic_delay	proc
 		push	ax cx dx
 
@@ -71,10 +70,10 @@ dynamic_delay	proc
 		endp
 
 
-; ---------------------------
+; ---------------------------------------
 ; Renders frame dynamically
-; Input:	Current_Settings
-; Output:	Frame on the screen
+; INPUT:	Current_Settings (GLOBAL VAR)
+; OUTPUT:	Frame on the screen
 ; Destroys:	AX BX CX DX
 draw_dynamic	proc
 		mov	dl, byte ptr [Current_Settings.FR_WIDTH]
@@ -125,10 +124,10 @@ draw_dynamic	proc
 		endp
 
 
-; ---------------------------
+; ---------------------------------------
 ; Converts string to int, iterates over the string, until it finds non-numeric character
-; Input:	SI - ptr to the string
-; Output:	BX - converted integer
+; INPUT:	SI - ptr to the string
+; OUTPUT:	BX - converted integer
 ; Destroys:	None
 strtod		proc
 		push	ax
@@ -207,12 +206,12 @@ parse_cmdline proc
 	@@text_not_written:
 		mov     di, offset Current_Settings.FR_STR
 		mov	ch, 1                 ; start our counter at 1
-		; Copy until closing quote
-	@@copy_loop:
+		
+	@@copy_loop:			; Copy until closing quote
 		mov     al, [si]
 		cmp     al, ''''
 		je      @@end_copy
-		mov     es:[di], al           ; or use STOSB (since DS=ES, you can also use MOVSB)
+		mov     es:[di], al
 		inc     di
 		inc     ch
 		inc     si
@@ -223,7 +222,7 @@ parse_cmdline proc
 		pop	di
 		jne     @@get_color    ;	if FR_STR_LEN==0, copy length into FR_STR_LEN, otherwise expect color for custom style
 		mov     byte ptr [Current_Settings.FR_STR_LEN], ch
-		inc     si                    ; Skip the closing quote
+		inc     si                    
 		jmp     @@read_loop
 
 	@@done_parsing:
@@ -231,53 +230,38 @@ parse_cmdline proc
 		ret
 
 	@@get_color:
-		call	parse_color
+		inc	si
+		call	hexstrtod
+		mov	byte ptr [user_style.ST_COLOR], bl
 		jmp	@@done_parsing
 		endp
 
 
-; ---------------------------
-; Parses color into user-defined styl
-; Input:	
-; Output:	
-; Destroys:	None 
-parse_color	proc
-	int 3
-		inc	si
-		call	hexstrtod
-		mov	byte ptr [user_style.ST_COLOR], bl
-		ret
-		endp
-
-
-; ---------------------------
+; ---------------------------------------
 ; Converts a hex string to int.
-; Iterates over the string (pointed to by SI) until a non-hex digit is encountered.
-; Input:	SI - pointer to the null-terminated string
-; Output:	BX - converted integer
+; INPUT:	SI - pointer to the null-terminated string
+; OUTPUT:	BX - converted integer
 ; Destroys:	None 
 hexstrtod	proc
 		push    ax cx dx         
-		xor     bx, bx     ; BX = 0, our running total
+		xor     bx, bx     
 
 	@@next_char:
-		lodsb              ; Load next byte from DS:SI into AL (AX = 00xx)
-
-		; Check for numeric digit '0' to '9'
+		lodsb              
 		cmp     al, '0'
-		jb      @@check_upper    ; if AL < '0', not a digit, so try letters
+		jb      @@check_upper    ; if AL < '0', not a digit, => letters
 		cmp     al, '9'
 		jbe     @@process_num
 
 	@@check_upper:
-		; Check for uppercase hex 'A' to 'F'
+		; 'A' to 'F'
 		cmp     al, 'A'
 		jb      @@check_lower    ; if AL < 'A', not valid
 		cmp     al, 'F'
 		jbe     @@process_upper
 
 	@@check_lower:
-		; Check for lowercase hex 'a' to 'f'
+		; 'a' to 'f'
 		cmp     al, 'a'
 		jb      @@exit           ; if AL < 'a', not a hex digit
 		cmp     al, 'f'
@@ -285,63 +269,66 @@ hexstrtod	proc
 		jmp     @@exit           ; not a valid hex digit
 
 	@@process_num:
-		; Process digit '0'..'9'
-		mov     cx, ax         ; Save original character in CX
+		; '0'..'9'
+		mov     cx, ax  
 		mov     ax, bx         ; AX = current total
 		mov     dx, 16d
-		mul     dx             ; Multiply BX by 16 (result in DX:AX)
+		mul     dx             
 		mov     bx, ax         ; BX = previous total * 16
-		mov     ax, cx         ; Restore digit character in AX
+		mov     ax, cx        
 		sub     ax, '0'        ; Convert ASCII to numeric value (0-9)
 		add     bx, ax         ; Add the digit value to total
 		jmp     @@next_char
 
 	@@process_upper:
-		; Process uppercase hex 'A'..'F'
-		mov     cx, ax         ; Save original character in CX
+		; 'A'..'F'
+		mov     cx, ax         ; original character in CX
 		mov     ax, bx
 		mov     dx, 16d
 		mul     dx
 		mov     bx, ax
 		mov     ax, cx
-		sub     ax, 'A'        ; Convert 'A' to 0, 'B' to 1, etc.
-		add     ax, 10         ; Adjust: 'A' represents 10
+		sub     ax, 'A'
+		add     ax, 10
 		add     bx, ax
 		jmp     @@next_char
 
 	@@process_lower:
-		; Process lowercase hex 'a'..'f'
-		mov     cx, ax         ; Save original character in CX
+		; 'a'..'f'
+		mov     cx, ax         ; original character in CX
 		mov     ax, bx
 		mov     dx, 16d
 		mul     dx
 		mov     bx, ax
 		mov     ax, cx
-		sub     ax, 'a'        ; Convert 'a' to 0, 'b' to 1, etc.
-		add     ax, 10         ; Adjust: 'a' represents 10
+		sub     ax, 'a'        
+		add     ax, 10         
 		add     bx, ax
 		jmp     @@next_char
 
 	@@exit:
-		pop     dx cx ax           ; Restore registers
+		pop     dx cx ax
 		ret
 		endp
 	
-; ---------------------------
-; Waits for keypress
-; Destroys: AH
+
+; ---------------------------------------
+; Waits for a keypress
+; INPUT:	None
+; OUTPUT:	None
+; DESTROYS:	AH 
 wait_for_key	proc
 		mov  ah, 0
 		int  16h
 		ret
 		endp
 
-
+; ---------------------------------------
 ; Calculates the length of a line provided (line ends with \)
-; Input:	SI - the string itself, CX - length
-; Output:	AX - length
-; Destroys:	None
-line_len		proc
+; INPUT:	SI - the string itself, CX - length
+; OUTPUT:	AX - length
+; DESTROYS:	None
+line_len	proc
 		push	es cx di
 
 		push	ds
@@ -350,7 +337,7 @@ line_len		proc
 		mov	di, si
 
 		xor	ax, ax
-		mov	al, '\'				
+		mov	al, '\'	
 		cld
 
 	repne	scasb
@@ -363,10 +350,12 @@ line_len		proc
 		ret
 		endp
 
-;		Gets amount of newlines in the text (cnt of \)
-; Input:	SI - string, CX - length
-; Output:	DH - amount of lines
-; Destroys:	None
+
+; ---------------------------------------
+; Gets amount of newlines in the text (cnt of \)
+; INPUT:	SI - string, CX - length
+; OUTPUT:	DH - amount of lines
+; DESTROYS:	None
 get_line_cnt	proc
 		push	di cx ax
 
@@ -378,7 +367,7 @@ get_line_cnt	proc
 		xor	dh, dh
 
 		xor	ax, ax
-		mov	al, '\'				
+		mov	al, '\'		; iterate until \
 		cld
 
 @@line_cnt_loop:
@@ -396,10 +385,11 @@ get_line_cnt	proc
 		endp
 
 
-;		Draws multi-line text (terminated with \) specified in Current_Settings
-; Input:	None
-; Output:	None
-; Destroys:	None
+; ---------------------------------------
+; Draws multi-line text (terminated with \) specified in Current_Settings
+; INPUT:	None
+; OUTPUT:	None
+; DESTROYS:	None
 draw_text	proc
 		push	cx ax dx
 		xor	cx, cx
@@ -435,19 +425,18 @@ draw_text	proc
 		jz	@@line_exit
 
 		jmp	@@line_loop
-
 @@line_exit:
-
 
 		pop	dx ax cx
 		ret
 		endp
 
 
-;		Draws single line at specified offset
-; Input:	SI - string start, DH - offset, DL - Line Length
-; Output:	None
-; Destroys:	DI
+; ---------------------------------------
+; Draws single line at specified offset
+; INPUT:	SI - string start, DH - offset, DL - Line Length
+; OUTPUT:	None
+; DESTROYS:	DI
 draw_text_line	proc
 		push	di ax si cx bx
 
@@ -480,9 +469,10 @@ draw_text_line	proc
 		endp
 
 
+; ---------------------------------------
 ; Draws the frame
-; Input:	Current_Settings
-; Output:	None
+; INPUT:	Current_Settings
+; OUTPUT:	None
 ; Destroys:	AX BX CX DX
 draw_frame	proc
 		pusha
@@ -511,9 +501,11 @@ frame_loop:
 		endp
 
 
-
+; ---------------------------------------
 ; Sets color accoring to Current_Settings
-; Input: None
+; INPUT:	Current_Settings
+; OUTPUT:	Color
+; DESTROYS:	AX
 get_color	proc
 		push	bx
 		xor	ax, ax
@@ -533,7 +525,11 @@ get_color	proc
 
 
 
+; ---------------------------------------
 ; Sets SI according to Current_Settings
+; INPUT:	Current_Settings
+; OUTPUT:	SI
+; Destroys:	None
 get_chars	proc
 		push	ax bx
 		xor	ax, ax
@@ -551,8 +547,10 @@ get_chars	proc
 		endp
 
 
+; ---------------------------------------
 ; Draws line
-; Input:	(CL, CH) (x,y) - starting pos, si - style ptr, dl - len
+; INPUT:	(CL, CH) (x,y) - starting pos, si - style ptr, dl - len
+; OUTPUT:	Line on a screen
 ; Destroys:	BX, AX, DI
 draw_line	proc
 		push cx
@@ -573,7 +571,7 @@ draw_line	proc
 		lodsb
 		stosw
 
-		lodsb
+		lodsb			; copy edge syms and the central line sym
 	rep	stosw
 
 		lodsb
@@ -585,21 +583,12 @@ draw_line	proc
 		ret
 		endp
 
-; Waits
-; Destroys: ah, cx, dx
-sleep		proc
-		mov ah, 86h
-		mov cx, 001eh		; 2 second wait
-		mov dx, 8480h
-		int 15h			; bios wait 
-
-		ret
-		endp
-
 		
+; ---------------------------------------
 ; Sets up graphics and es to point to video memory
-; Output: ES - gfx segment, SI - frame style ptr
-; Destroys: AX
+; INPUT:	None
+; OUTPUT:	ES - gfx segment, SI - frame style ptr
+; Destroys:	AX
 init_gfx	proc
 		xor ah, ah
 		mov ax, GFX_MODE
@@ -612,10 +601,11 @@ init_gfx	proc
 		endp
 
 
-; Input: position - ch - X, cl - Y (CX)
-; Output: AX - graphics memory offset
-; ax = (row * 80 + col) * 2
-; Destroys: BX
+; ---------------------------------------
+; INPUT:	position - ch - X, cl - Y (CX)
+; OUTPUT:	AX - graphics memory offset
+;		ax = (row * 80 + col) * 2
+; DESTROYS:	BX
 pos_to_pixel	proc 
 		mov al, ch
 		mov ah, 0	; ax = row
@@ -633,9 +623,11 @@ pos_to_pixel	proc
 		endp
 
 
-; Input: AL - return code
-; Destroys: AX
-; This function does not return!
+; ---------------------------------------
+; INPUT:	AL - return code
+; OUTPUT:	None
+; DESTROYS:	AX
+; WARNING:	This function does not return!
 exit		proc
 		mov ah, 4ch		
 		int 21h
