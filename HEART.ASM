@@ -4,20 +4,23 @@
 
 SCREEN_WIDTH	equ 320d
 SCREEN_HEIGHT	equ 200d
-VERTEX_CNT	equ 100d
-
 VIDEO_MODE	equ 13h
 GFX_MEM		equ 0a000h
+CHAR_WIDTH	equ 8d
+CHAR_HEIGHT	equ 8d
+
+VERTEX_CNT	equ 100d
 COLOR		equ 0ch
+TEXT_COLOR	equ 0fh
 BG_COLOR	equ 00h
-DELAY		equ 2000h
+DELAY		equ 3000h
 
 CURVE_FACTOR	equ 0.05
-STEP_X		equ 0.02
-STEP_Y		equ 0.01
+STEP_X		equ 0.005
+STEP_Y		equ 0.025
 FOV_ANGLE	equ 256.0
-DIST		equ 4.0
-Z_LENGTH	equ 0.25
+DIST		equ 4.2
+Z_LENGTH	equ 0.15
 
 Vector3	STRUC
 	X	dd ?
@@ -34,6 +37,7 @@ Screen2D	ENDS
 .code
 org 100h
 
+
 ; ---------------------------------------
 ; Entrypoint
 Start:
@@ -42,7 +46,6 @@ Start:
 
 	call	draw
 
-	call	wait_for_key
 	call	exit_0
 
 
@@ -52,7 +55,7 @@ Start:
 ; INPUT:	None
 ; OUTPUT:	None
 ; DESTROYS:	None
-render_delay		proc
+render_delay	proc
 		push	ax cx dx
 
 		xor	cx, cx
@@ -75,13 +78,50 @@ clear_screen	proc
 		push	ax cx di
 
 		cld
-		xor	di, di
+		mov	di, SCREEN_WIDTH * CHAR_HEIGHT
 		mov	al, BG_COLOR
 		mov	ah, BG_COLOR
-		mov	cx, (SCREEN_WIDTH * SCREEN_HEIGHT) / 2d		; amount of operations (/2 since storing words)
+		mov	cx, (SCREEN_WIDTH * (SCREEN_HEIGHT - (2 * CHAR_HEIGHT))) / 2d		; amount of operations (/2 since storing words) - 2 since not clearing text
 	rep	stosw
 
 		pop	di cx ax
+		ret
+		endp
+
+
+; ---------------------------------------
+; Renders text specified in SI or 13h GFX mode
+; INPUT:	SI - ptr to the string, CL - string length
+; OUTPUT:	Text on the screen
+; DESTROYS:
+render_text	proc		
+	mov	dl, SCREEN_WIDTH / CHAR_WIDTH
+	sub	dl, cl
+	shr	dl, 1
+	@@char_loop:
+		lodsb
+
+		mov	dh, 0	
+		mov	bh, 0		
+		mov	ah, 02h		; SetCursorPosition
+		int	10h
+
+		mov	bl, TEXT_COLOR
+		mov	ah, 0Eh		; Teletype
+		int	10h
+
+		mov	dh, (SCREEN_HEIGHT / CHAR_HEIGHT) - 1
+		mov	bh, 0		
+		mov	ah, 02h		; SetCursorPosition
+		int	10h
+
+		mov	bl, TEXT_COLOR
+		mov	ah, 0Eh		; Teletype
+		int	10h
+		
+		inc	dl
+		loop	@@char_loop
+
 		ret
 		endp
 
@@ -95,7 +135,7 @@ clear_screen	proc
 RENDER		macro	FROM, TO
 		LOCAL	@@render_loop
 
-		xor	cx, cx
+		mov	cx, 1d
 @@render_loop:
 		mov	ax, cx
 		inc	ax
@@ -117,7 +157,7 @@ RENDER		macro	FROM, TO
 		call	draw_line		; draw(proj_front[i], proj_front[i + 1 % n])
 
 		inc	cx
-		cmp	cx, VERTEX_CNT
+		cmp	cx, VERTEX_CNT - 1
 		jl	@@render_loop
 		
 		endm
@@ -129,6 +169,10 @@ RENDER		macro	FROM, TO
 ; OUTPUT:	Renders graphical representation of heart on the screen
 ; DESTROYS:	AX BX CX DX SI DI
 draw		proc
+	mov	si, offset STRING
+	mov	cl, byte ptr [STRING_LEN]
+	call	render_text
+
 @@main_loop:
 	fld	dword ptr [angle_x]		; increment the rotation angle
 	fadd	dword ptr [angle_step_x]
@@ -149,7 +193,7 @@ draw		proc
 		call	copy_vector3		; vec_front = heart_front[i]
 
 		mov	si, di
-		call	rotate_y		; vec_front = rotateY(vec_front, angle)
+		call	rotate_y		
 		call	rotate_x		; vec_front = rotateX(vec_front, angle)
 
 		mov	di, offset proj_front
@@ -171,7 +215,7 @@ draw		proc
 		fstp	dword ptr [di.Z]	; vec_back.Z = -vec_back.Z
 
 		mov	si, di
-		call	rotate_y		; vec_back = rotateY(vec_front, angle)
+		call	rotate_y	
 		call	rotate_x		; vec_back = rotateX(vec_front, angle)
 
 		mov	di, offset proj_back
@@ -185,7 +229,6 @@ draw		proc
 		cmp	bx, VERTEX_CNT
 		jle	@@projection_loop
 	
-
 	call	clear_screen
 
 	RENDER	proj_front, proj_front
@@ -193,8 +236,15 @@ draw		proc
 	RENDER	proj_front, proj_back
 
 	call	render_delay
+
+
+	mov	ah, 1h		;  check for keystroke
+	int	16h
+	jnz	@@exit		; if ZF=1 => exit
+
 	jmp	@@main_loop
 
+@@exit:
 	ret
 	endp
 
@@ -695,5 +745,7 @@ wait_for_key	proc
 		SCREEN2D_SZ		dw  SIZE Screen2D
 		heart_vertex_cnt	dw  VERTEX_CNT
 
+		STRING			db "Happy Valentine's Day!!"
+		STRING_LEN		db 23
 END Start
 
