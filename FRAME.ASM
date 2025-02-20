@@ -1,59 +1,46 @@
+include	HEART.inc
+include	FRAME.inc
+
 .model tiny
 .386
+.387
+
 .code
+
 org 100h
 
-
-PSP_CMDLINE_LEN_OFFSET	equ	80h
-PSP_CMDLINE_OFFSET	equ	81h
-GFX_MEM_SEGMENT		equ	00b800h 
-GFX_MODE		equ	3h
-DELAY			equ	04444h
-
-FRAME_SETTINGS STRUC
-	FR_START_X		db 15
-	FR_START_Y		db 5 
-	FR_WIDTH		db 25
-	FR_HEIGHT		db 10 
-	FR_DYNAMIC		db 1
-	FR_SELECTED_STYLE	db 2
-	FR_STR_LEN		db 0
-	FR_STR			db 128d dup(?)
-FRAME_SETTINGS ENDS
-
-
-FRAME_STYLE STRUC
-	ST_COLOR		db 0ch
-	ST_CHARMAP		db 9 dup(?)
-FRAME_STYLE ENDS
-
-; TODO:
-;	pair up with the graphical frame
-
 Start:		
-		call	init_gfx
-
 		call	parse_cmdline
+
+		call	init_gfx
 		call	get_chars
 
-		mov	ah, byte ptr [Current_Settings.FR_DYNAMIC]
+		mov	ah, byte ptr [Current_Settings.FR_SELECTED_STYLE]
+		cmp	ah, 4
+		je	@@heart							; style == 4 => draw heart
+
+		mov	ah, byte ptr [Current_Settings.FR_DYNAMIC]		; check if dynamic scaling is enabled
 		test	ah, ah
 		jz	@@static
 		call	draw_dynamic
 	@@static:
 		call	draw_frame 
-
 		call	draw_text
-
 		call	wait_for_key
 
+	@@done:
 		xor	al, al
 		call	exit
 
 
+	@@heart:
+		call	draw_heart
+		jmp	@@done
+
+
 ; ---------------------------------------
-; Waits for DELAY microseconds
-; INPUT:	DELAY (MACRO CONSTANT)
+; Waits for EXPANSION_DELAY microseconds
+; INPUT:	EXPANSION_DELAY (MACRO CONSTANT)
 ; OUTPUT:	None
 ; Destroys::	None
 dynamic_delay	proc
@@ -62,7 +49,7 @@ dynamic_delay	proc
 		xor	cx, cx
 		xor	ax, ax
 		mov	ah, 86h
-		mov	dx, DELAY
+		mov	dx, EXPANSION_DELAY
 		int	15h
 		
 		pop	dx cx ax
@@ -162,6 +149,7 @@ strtod		proc
 		ret
 		endp
 
+
 parse_cmdline proc
 		push    es
 		mov     dx, ds
@@ -174,11 +162,10 @@ parse_cmdline proc
 		inc     si                    ; Skip length byte
 
 		mov     di, offset Current_Settings
-
 	@@read_loop:
 	@@skip_whitespace:
 		cmp     si, dx
-		jae     @@done_parsing        ; no more characters
+		jge     @@done_parsing        ; no more characters
 		cmp     byte ptr [si], ' '
 		jne     @@token_found
 		inc     si
@@ -186,7 +173,7 @@ parse_cmdline proc
 
 	@@token_found:
 		mov     bl, byte ptr [si]
-		cmp     bl, ''''              ; If we see a quote, then parse a string
+		cmp     bl, "'"              ; If we see a quote, then parse a string
 		je      @@parse_string
 
 		call    strtod
@@ -209,7 +196,7 @@ parse_cmdline proc
 		
 	@@copy_loop:			; Copy until closing quote
 		mov     al, [si]
-		cmp     al, ''''
+		cmp     al, "'"
 		je      @@end_copy
 		mov     es:[di], al
 		inc     di
@@ -634,6 +621,7 @@ exit		proc
 		endp
 
 .data
+	public	Current_Settings
 	Current_Settings	FRAME_SETTINGS <20, 6, 40, 10, 1>
 styles:
 	user_style		FRAME_STYLE <>

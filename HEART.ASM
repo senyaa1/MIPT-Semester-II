@@ -1,53 +1,29 @@
+include	HEART.inc
+include	FRAME.inc
+
+extrn	Current_Settings:FRAME_SETTINGS
+
 .model tiny
 .386
 .387
 
-SCREEN_WIDTH	equ 320d
-SCREEN_HEIGHT	equ 200d
-VIDEO_MODE	equ 13h
-GFX_MEM		equ 0a000h
-CHAR_WIDTH	equ 8d
-CHAR_HEIGHT	equ 8d
-
-VERTEX_CNT	equ 100d
-COLOR		equ 0ch
-TEXT_COLOR	equ 0fh
-BG_COLOR	equ 00h
-DELAY		equ 2000h
-
-CURVE_FACTOR	equ 0.05
-STEP_X		equ 0.005
-STEP_Y		equ 0.025
-FOV_ANGLE	equ 256.0
-DIST		equ 4.2
-Z_LENGTH	equ 0.15
-
-Vector3	STRUC
-	X	dd ?
-	Y	dd ?
-	Z	dd ?
-Vector3	ENDS
-
-Screen2D	STRUC
-	SC_X	dw ?
-	SC_Y	dw ?
-Screen2D	ENDS
-
-
-.code
 org 100h
 
+.code
+
+public	draw_heart
 
 ; ---------------------------------------
-; Entrypoint
-Start:
-	call	init_gfx
-	call	init_heart
-
-	call	draw
-
-	call	exit_0
-
+; Initializes and draw the heart
+; INPUT:	None
+; OUTPUT:	None
+; DESTROYS:	None
+draw_heart	proc
+		call	init_gfx
+		call	init_heart
+		call	draw
+		ret
+		endp
 
 
 ; ---------------------------------------
@@ -95,6 +71,7 @@ clear_screen	proc
 ; OUTPUT:	Text on the screen
 ; DESTROYS:
 render_text	proc		
+	int 3
 	mov	dl, SCREEN_WIDTH / CHAR_WIDTH
 	sub	dl, cl
 	shr	dl, 1
@@ -166,11 +143,12 @@ RENDER		macro	FROM, TO
 ; ---------------------------------------
 ; Main drawing procedure 
 ; INPUT:	ES - video segment, heart_front (GLOBAL VAR) - heart vertices
-; OUTPUT:	Renders graphical representation of heart on the screen
+; OUTPUT:	Renders graphicalrepresentation of heart on the screen
 ; DESTROYS:	AX BX CX DX SI DI
 draw		proc
-	mov	si, offset STRING
-	mov	cl, byte ptr [STRING_LEN]
+	xor	cx, cx
+	mov	si, offset Current_Settings.FR_STR
+	mov	cl, byte ptr [Current_Settings.FR_STR_LEN]
 	call	render_text
 
 @@main_loop:
@@ -755,7 +733,9 @@ wait_for_key	proc
 		SCREEN2D_SZ		dw  SIZE Screen2D
 		heart_vertex_cnt	dw  VERTEX_CNT
 
-		STRING			db "amogus is real"
-		STRING_LEN		db 14
-END Start
+		public	TITLE_STRING
+		TITLE_STRING		db 128 dup(?)
+		public	TITLE_LEN
+		TITLE_LEN		db ?
+end 
 
