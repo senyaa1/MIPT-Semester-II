@@ -71,7 +71,6 @@ clear_screen	proc
 ; OUTPUT:	Text on the screen
 ; DESTROYS:
 render_text	proc		
-	int 3
 	mov	dl, SCREEN_WIDTH / CHAR_WIDTH
 	sub	dl, cl
 	shr	dl, 1
