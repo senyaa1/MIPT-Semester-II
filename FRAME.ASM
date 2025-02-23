@@ -11,31 +11,44 @@ org 100h
 
 Start:		
 		call	parse_cmdline
-
 		call	init_gfx
-		call	get_chars
 
 		mov	ah, byte ptr [Current_Settings.FR_SELECTED_STYLE]
 		cmp	ah, 4
 		je	@@heart							; style == 4 => draw heart
 
+		call	get_chars
 		mov	ah, byte ptr [Current_Settings.FR_DYNAMIC]		; check if dynamic scaling is enabled
 		test	ah, ah
 		jz	@@static
 		call	draw_dynamic
+
 	@@static:
 		call	draw_frame 
 		call	draw_text
-		call	wait_for_key
 
 	@@done:
+		call	wait_for_key
 		xor	al, al
 		call	exit
-
 
 	@@heart:
 		call	draw_heart
 		jmp	@@done
+
+
+; ---------------------------------------
+; Main show frame procedure
+; INPUT:	Current_Settings (global var)
+; OUTPUT:	Frame on a screen
+; Destroys::	None
+public	show_frame
+show_frame	proc
+		call	get_chars
+		call	draw_frame 
+		call	draw_text
+		ret
+		endp
 
 
 ; ---------------------------------------
@@ -63,37 +76,35 @@ dynamic_delay	proc
 ; OUTPUT:	Frame on the screen
 ; Destroys:	AX BX CX DX
 draw_dynamic	proc
-		mov	dl, byte ptr [Current_Settings.FR_WIDTH]
+		mov	dl, byte ptr cs:[Current_Settings.FR_WIDTH]
 		mov	cl, dl
 		shr	cl, 1
-		add	cl, byte ptr [Current_Settings.FR_START_X]	; cl = width / 2 + start_x
+		add	cl, byte ptr cs:[Current_Settings.FR_START_X]	; cl = width / 2 + start_x
 
-		mov	dh, byte ptr [Current_Settings.FR_HEIGHT]
+		mov	dh, byte ptr cs:[Current_Settings.FR_HEIGHT]
 		mov	ch, dh
 		shr	ch, 1
-		add	ch, byte ptr [Current_Settings.FR_START_Y]	; ch = height / 2 + start_y
+		add	ch, byte ptr cs:[Current_Settings.FR_START_Y]	; ch = height / 2 + start_y
 
-		mov	al, 2
-		mov	ah, 2
 @@dynamic_loop:	
-		mov	byte ptr [Current_Settings.FR_WIDTH], al
-		mov	byte ptr [Current_Settings.FR_START_X], cl
-		mov	byte ptr [Current_Settings.FR_HEIGHT], ah
-		mov	byte ptr [Current_Settings.FR_START_Y], ch
+		mov	byte ptr cs:[Current_Settings.FR_WIDTH], al
+		mov	byte ptr cs:[Current_Settings.FR_START_X], cl
+		mov	byte ptr cs:[Current_Settings.FR_HEIGHT], ah
+		mov	byte ptr cs:[Current_Settings.FR_START_Y], ch
 		call	draw_frame 
 
 		call	dynamic_delay
 
 		cmp	ah, dh
 		je	@@dont_inc_y
-		inc	ah
+;		inc	ah
 		inc	ah	; ah += 2
 		dec	ch	; ch--;
 	@@dont_inc_y:
 
 		cmp	al, dl
 		je	@@dont_inc_x
-		inc	al
+;		inc	al
 		inc	al	; al += 2
 		dec	cl	; cl--;
 	@@dont_inc_x:
@@ -156,7 +167,7 @@ parse_cmdline proc
 		mov     es, dx
 
 		xor     dx, dx
-		mov     dl, byte ptr ds:[PSP_CMDLINE_LEN_OFFSET]
+		mov     dl, byte ptr cs:[PSP_CMDLINE_LEN_OFFSET]
 		mov     si, PSP_CMDLINE_OFFSET
 		add     dx, si                ; DX = end pointer of the command line
 		inc     si                    ; Skip length byte
@@ -166,18 +177,18 @@ parse_cmdline proc
 	@@skip_whitespace:
 		cmp     si, dx
 		jge     @@done_parsing        ; no more characters
-		cmp     byte ptr [si], ' '
+		cmp     byte ptr cs:[si], ' '
 		jne     @@token_found
 		inc     si
 		jmp     @@skip_whitespace
 
 	@@token_found:
-		mov     bl, byte ptr [si]
+		mov     bl, byte ptr cs:[si]
 		cmp     bl, "'"              ; If we see a quote, then parse a string
 		je      @@parse_string
 
 		call    strtod
-		mov     byte ptr [di], bl     ; store the parsed integer into the structure
+		mov     byte ptr cs:[di], bl     ; store the parsed integer into the structure
 		inc     di                    ; advance destination for next integer
 		jmp     @@read_loop
 
@@ -185,7 +196,7 @@ parse_cmdline proc
 		inc     si		; Skip the opening quote 
 		push	di
 
-		mov     cl, byte ptr [Current_Settings.FR_STR_LEN]
+		mov     cl, byte ptr cs:[Current_Settings.FR_STR_LEN]
 		cmp     cl, 0
 		je      @@text_not_written    ; if FR_STR_LEN==0, copy into FR_STR
 		mov     di, offset user_style.ST_CHARMAP 		; Otherwise, copy into user_style.ST_CHARMAP:
@@ -204,11 +215,11 @@ parse_cmdline proc
 		inc     si
 		jmp	@@copy_loop
 	@@end_copy:
-		mov     cl, byte ptr [Current_Settings.FR_STR_LEN]
+		mov     cl, byte ptr cs:[Current_Settings.FR_STR_LEN]
 		cmp     cl, 0
 		pop	di
 		jne     @@get_color    ;	if FR_STR_LEN==0, copy length into FR_STR_LEN, otherwise expect color for custom style
-		mov     byte ptr [Current_Settings.FR_STR_LEN], ch
+		mov     byte ptr cs:[Current_Settings.FR_STR_LEN], ch
 		inc     si                    
 		jmp     @@read_loop
 
@@ -219,7 +230,7 @@ parse_cmdline proc
 	@@get_color:
 		inc	si
 		call	hexstrtod
-		mov	byte ptr [user_style.ST_COLOR], bl
+		mov	byte ptr cs:[user_style.ST_COLOR], bl
 		jmp	@@done_parsing
 		endp
 
@@ -330,7 +341,7 @@ line_len	proc
 	repne	scasb
 	
 		sub	di, si
-		dec	di
+		dec	di		; di -= si - 1
 		mov	ax, di
 
 		pop	di cx es
@@ -384,10 +395,10 @@ draw_text	proc
 		xor	dx, dx
 
 		mov	si, offset Current_Settings.FR_STR
-		mov	cl, byte ptr [Current_Settings.FR_STR_LEN]
+		mov	cl, byte ptr cs:[Current_Settings.FR_STR_LEN]
 		
 		call	get_line_cnt					; calculate offset - (height - lines / 2)
-		sub	dh, byte ptr [Current_Settings.FR_HEIGHT]
+		sub	dh, byte ptr cs:[Current_Settings.FR_HEIGHT]
 		neg	dh
 		shr	dh, 1
 		sub	dh, 1
@@ -399,7 +410,6 @@ draw_text	proc
 					; al - current terminated line len
 		test	al, al
 		jz	@@line_exit
-
 		mov	dl, al
 		call	draw_text_line
 
@@ -429,14 +439,16 @@ draw_text_line	proc
 
 		mov	cl, dl
 
-		mov	al, byte ptr [Current_Settings.FR_WIDTH]
+		mov	al, byte ptr cs:[Current_Settings.FR_WIDTH]
 		sub	al, cl
-		shr	al, 1							
-		add	al, byte ptr [Current_Settings.FR_START_X]		; (width - strlen) / 2 + start_x
+		shr	al, 1d							
+		add	al, 7d
+		add	al, byte ptr cs:[Current_Settings.FR_START_X]	; line_x = (width - len) / 2 + startx + borders
 
 		add	ah, dh							
-		add	ah, byte ptr [Current_Settings.FR_START_Y]		; offset + start_y + 1
+		add	ah, byte ptr cs:[Current_Settings.FR_START_Y]		
 		inc	ah
+		inc	ah						; offset + start_y + 2
 		
 		push	cx
 		mov	cx, ax
@@ -445,7 +457,8 @@ draw_text_line	proc
 		pop	cx
 
 		call	get_color
-
+		inc     di
+		inc     di		; di += 2
 @@text_loop:
 		lodsb
 		stosw
@@ -463,25 +476,27 @@ draw_text_line	proc
 ; Destroys:	AX BX CX DX
 draw_frame	proc
 		pusha
-		mov cl, byte ptr [Current_Settings.FR_START_X]
-		mov ch, byte ptr [Current_Settings.FR_START_Y]
-		mov dl, byte ptr [Current_Settings.FR_WIDTH]
-		mov dh, byte ptr [Current_Settings.FR_HEIGHT]
 
-		add dh, ch
+		mov	cl, byte ptr cs:[Current_Settings.FR_START_X]
+		mov	ch, byte ptr cs:[Current_Settings.FR_START_Y]
+		mov	dl, byte ptr cs:[Current_Settings.FR_WIDTH]		
+		mov	dh, byte ptr cs:[Current_Settings.FR_HEIGHT]	; height += 1 (accounting frames)
+		inc	dh
 
-		call draw_line
-		inc ch
-		add si, 3
+		add	dh, ch
 
-frame_loop:
-		call draw_line
-		inc ch
-		cmp ch, dh
-		jl frame_loop
+		call	draw_line
+		inc	ch
+		add	si, 3
 
-		add si, 3
-		call draw_line
+@@frame_loop:
+		call	draw_line
+		inc	ch
+		cmp	ch, dh
+		jl	@@frame_loop
+
+		add	si, 3
+		call	draw_line
 
 		popa
 		ret
@@ -497,19 +512,18 @@ get_color	proc
 		push	bx
 		xor	ax, ax
 
-		mov	al, byte ptr [Current_Settings.FR_SELECTED_STYLE]
+		mov	al, byte ptr cs:[Current_Settings.FR_SELECTED_STYLE]
 		mov	bh, SIZE FRAME_STYLE
 		mul	bh
 		mov	bx, offset styles			
 		add	bx, ax							; bx = style_list + selected * sizeof(frame_style)
 
 		xor	ax, ax
-		mov	ah, byte ptr [bx + FRAME_STYLE.ST_COLOR]
+		mov	ah, byte ptr cs:[bx + FRAME_STYLE.ST_COLOR]
 
 		pop	bx
 		ret
 		endp
-
 
 
 ; ---------------------------------------
@@ -521,7 +535,7 @@ get_chars	proc
 		push	ax bx
 		xor	ax, ax
 
-		mov	al, byte ptr [Current_Settings.FR_SELECTED_STYLE]
+		mov	al, byte ptr cs:[Current_Settings.FR_SELECTED_STYLE]
 		mov	bh, SIZE FRAME_STYLE
 		mul	bh
 		mov	bx, offset styles			
@@ -535,25 +549,97 @@ get_chars	proc
 
 
 ; ---------------------------------------
+; Saves vga buffer to back buffer
+; INPUT:	None
+; OUTPUT:	Copied buffer to back_buf (global var)
+; Destroys:	None
+public		save_buf
+save_buf	proc
+		push	cx es ds si di
+
+		push	GFX_MEM_SEGMENT
+		pop	ds		; ds = es
+
+		push	cs
+		pop	es		; es = cs
+
+		xor	si, si
+		mov	di, offset back_buffer
+		mov	cx, GFX_WIDTH * GFX_HEIGHT * 2
+	rep	movsw			; copy whole videobuf
+
+		pop	di si ds es cx
+		ret
+		endp
+
+
+; ---------------------------------------
+; Restores vga buffer, by comparing back_buf to current videobuf
+; INPUT:	back_buf (global var), Current_Settings
+; OUTPUT:	Restores VGA buf to previously stored state
+; Destroys:	None
+public	restore_buf
+restore_buf	proc
+		push	es ds
+		pusha
+		push	cs
+		pop	ds
+		push	GFX_MEM_SEGMENT
+		pop	es
+
+		mov	bl, byte ptr cs:[Current_Settings.FR_START_X]
+		mov	bh, byte ptr cs:[Current_Settings.FR_START_Y]	; start coordinates
+		mov	dl, byte ptr cs:[Current_Settings.FR_HEIGHT]
+
+		mov	dh, dl 
+		add	dh, bh						; dh = dl + bh = start_y + height + 1
+		inc	dh
+
+		mov	dl, byte ptr cs:[Current_Settings.FR_WIDTH]
+		add	dl, 4d						; dl = (width + 4) (to account for borders)
+
+@@restore_loop:
+		mov	cx, bx
+		call	pos_to_pixel		
+
+		mov	di, ax
+		mov	si, offset back_buffer
+		add	si, ax					; position gfx cursor to the start of the next line
+
+		xor	cx, cx
+		mov	cl, dl					; copy line length from al
+	rep	movsw
+
+		inc	bh					; line++
+		cmp	bh, dh					; cur_line < start_y + height
+		jle	@@restore_loop
+		
+		popa
+		pop	ds es
+		ret
+		endp
+
+
+
+; ---------------------------------------
 ; Draws line
 ; INPUT:	(CL, CH) (x,y) - starting pos, si - style ptr, dl - len
 ; OUTPUT:	Line on a screen
 ; Destroys:	BX, AX, DI
 draw_line	proc
-		push cx
-		push dx
-		push si
+		push	cx dx si 
 
-		call pos_to_pixel
-		mov di, ax		; di - gfx memory ptr
+		call	pos_to_pixel
+		mov	di, ax		; di - gfx memory ptr
 
-		xor cx, cx
-		mov cl, dl		; setup for loop ch = len - 2
-		dec cl
-		dec cl
+		shl	dl, 1d
+
+		xor	cx, cx
+		mov	cl, dl		; setup for loop ch = len - 2
+		sub	cl, 6d		; subtract borders
 
 		cld
-		call get_color
+		call	get_color
 
 		lodsb
 		stosw
@@ -563,10 +649,8 @@ draw_line	proc
 
 		lodsb
 		stosw
-
-		pop si
-		pop dx
-		pop cx
+		
+		pop	si dx cx
 		ret
 		endp
 
@@ -589,23 +673,26 @@ init_gfx	proc
 
 
 ; ---------------------------------------
-; INPUT:	position - ch - X, cl - Y (CX)
+; INPUT:	position - ch - Y, cl - X (CX)
 ; OUTPUT:	AX - graphics memory offset
 ;		ax = (row * 80 + col) * 2
 ; DESTROYS:	BX
 pos_to_pixel	proc 
-		mov al, ch
-		mov ah, 0	; ax = row
-		
-		mov bl, 80	; ax = row * 80
-		mul bl
-		
-		mov bl, cl
-		xor bh, bh
-		add ax, bx	; ax = row * 80 + col
+		push	bx
 
-		shl ax, 1 	; * 2	
+		mov	al, ch
+		mov	ah, 0	; ax = row
 		
+		mov	bl, 80	; ax = row * 80
+		mul	bl
+		
+		mov	bl, cl
+		xor	bh, bh
+		add	ax, bx	; ax = row * 80 + col
+
+		shl	ax, 1 	; * 2	
+		
+		pop	bx
 		ret
 		endp
 
@@ -622,12 +709,13 @@ exit		proc
 
 .data
 	public	Current_Settings
-	Current_Settings	FRAME_SETTINGS <20, 6, 40, 10, 1>
+	Current_Settings	FRAME_SETTINGS <>
 styles:
 	user_style		FRAME_STYLE <>
 	frame_style1		FRAME_STYLE <70h, "+-+| |+-+">
-	frame_style2		db 1bh, 0c9h, 0cdh, 0bbh, 0bah, 20h, 0bah, 0c8h, 0cdh, 0bch
+	frame_style2		db 3fh, 0c9h, 0cdh, 0bbh, 0bah, 20h, 0bah, 0c8h, 0cdh, 0bch
 	frame_style3		db 1bh, 0dah, 0c4h, 0bfh, 0b3h, 20h, 0b3h, 0c0h, 0c4h, 0d9h
 
+	back_buffer		db 2 * GFX_WIDTH * GFX_HEIGHT dup(?)
 END Start
 
