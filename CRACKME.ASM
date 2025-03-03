@@ -162,8 +162,6 @@ read_stdin	proc
 	
 		jmp     @@read_loop
 @@finished_input:
-		mov     byte ptr [di], 0 ; null-terminate the string
-
 		call	newline
 		ret
 		endp
