@@ -5,7 +5,7 @@ extrn	Current_Settings:FRAME_SETTINGS
 ON_KEY		equ	3bh
 OFF_KEY		equ	3ch
 DEF_WIDTH	equ	8d
-DEF_HEIGHT	equ	8d
+DEF_HEIGHT	equ	10d
 
 .model tiny
 .386
@@ -161,7 +161,7 @@ convert_hex	proc
 ; Destroys:	None
 save_registers	proc
 		push	es
-		pusha
+		push	ax bx cx dx sp bp si di
 		
 		push	cs
 		pop	es	; es = cs
@@ -169,6 +169,8 @@ save_registers	proc
 		mov	di, offset Current_Settings.FR_STR
 		mov	si, offset reg_names
 
+		mov	al, ' '
+		stosb
 
 		mov	cx, 8d
 		mov	bx, sp
@@ -191,7 +193,8 @@ save_registers	proc
 
 		loop	@@copy_reg_loop
 
-		popa
+		pop	di si bp sp dx cx bx ax
+
 		pop	es
 		ret
 		endp
@@ -211,7 +214,7 @@ frame_setup	proc
 		mov	al, DEF_HEIGHT
 		mov	byte ptr [Current_Settings.FR_HEIGHT], al
 
-		mov	byte ptr cs:[Current_Settings.FR_STR_LEN], 8d * 10d
+		mov	byte ptr cs:[Current_Settings.FR_STR_LEN], 8d * 10d + 1d
 
 		ret
 		endp
@@ -258,7 +261,7 @@ tsr		proc
 
 .data
 	is_active:	db 0
-	reg_names:	db "ax: cx: dx: bx: sp: bp: di: si: "
+reg_names:	db "ax: bx: cx: dx: sp: bp: di: si: "
 end Start
 
 

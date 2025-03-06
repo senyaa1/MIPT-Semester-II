@@ -270,8 +270,8 @@ hexstrtod	proc
 		; '0'..'9'
 		mov     cx, ax  
 		mov     ax, bx         ; AX = current total
-		mov     dx, 16d
-		mul     dx             
+		shl	dx, 4d
+
 		mov     bx, ax         ; BX = previous total * 16
 		mov     ax, cx        
 		sub     ax, '0'        ; Convert ASCII to numeric value (0-9)
@@ -282,8 +282,7 @@ hexstrtod	proc
 		; 'A'..'F'
 		mov     cx, ax         ; original character in CX
 		mov     ax, bx
-		mov     dx, 16d
-		mul     dx
+		shl	dx, 4d
 		mov     bx, ax
 		mov     ax, cx
 		sub     ax, 'A'
@@ -295,8 +294,7 @@ hexstrtod	proc
 		; 'a'..'f'
 		mov     cx, ax         ; original character in CX
 		mov     ax, bx
-		mov     dx, 16d
-		mul     dx
+		shl	dx, 4d
 		mov     bx, ax
 		mov     ax, cx
 		sub     ax, 'a'        
@@ -416,7 +414,6 @@ draw_text	proc
 		add	si, ax
 		inc	dh		; skip to newline
 		inc	si		; skip one symbol (\)
-		dec	cl
 
 		test	cl, cl
 		jz	@@line_exit
@@ -440,10 +437,11 @@ draw_text_line	proc
 		mov	cl, dl
 
 		mov	al, byte ptr cs:[Current_Settings.FR_WIDTH]
-		sub	al, cl
+		inc	al
+		sub	al, dl
 		shr	al, 1d							
-		add	al, 7d
-		add	al, byte ptr cs:[Current_Settings.FR_START_X]	; line_x = (width - len) / 2 + startx + borders
+		add	al, byte ptr cs:[Current_Settings.FR_START_X]	; line_x = (width - len) / 2 + startx  
+;		add	al, 8d
 
 		add	ah, dh							
 		add	ah, byte ptr cs:[Current_Settings.FR_START_Y]		
