@@ -1,6 +1,7 @@
 #include <stdio.h>
 
 extern int myprintf(const char* fmt, ...);
+extern void flush_buf_full();
 
 int main()
 {
@@ -10,7 +11,7 @@ int main()
 	printf("test fmt %%c: %c\t%%d: %d\t%%o: %o\t%%s: %s\t%%x: %x\t%%b: %b\t%%: %%\n", 'c', 123, 123, "real", 255, 7);
 	myprintf("test fmt %%c: %c\t%%d: %d\t%%o: %o\t%%s: %s\t%%x: %x\t%%b: %b\t%%: %%\n", 'c', 123, 123, "real", 255, 7);
 
-	myprintf("%d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d\n", 10,  10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10);
+	// flush_buf_full();
 
 	return 0;
 }
