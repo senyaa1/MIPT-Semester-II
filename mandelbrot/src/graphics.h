@@ -22,5 +22,7 @@ typedef struct sdl_state
 void deinitialize_sdl(sdl_state_t* state);
 int initialize_sdl(sdl_state_t* state);
 Uint32 get_color(int iter);
-void render_mandelbrot(sdl_state_t* state, double x_offset, double y_offset, double zoom_factor);
 
+void render_mandelbrot_default(sdl_state_t* state, float x_offset, float y_offset, float zoom_factor);
+void render_mandelbrot_parallelized(sdl_state_t* state, float x_offset, float y_offset, float zoom_factor);
+void render_mandelbrot_intrinsics(sdl_state_t* state, float x_offset, float y_offset, float zoom_factor);
