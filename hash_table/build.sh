@@ -8,8 +8,7 @@ cmake -DCMAKE_BUILD_TYPE=Release ..
 cmake --build .
 popd
 
-# hyperfine build/hash_table
+hyperfine build/hash_table
 
 perf record -g -b ./build/hash_table 
 perf report -Mintel --call-graph
-

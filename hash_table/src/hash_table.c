@@ -1,21 +1,26 @@
+#include <assert.h>
 #include <immintrin.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <wchar.h>
 
 #include "hash_table.h"
 
+extern uint32_t crc32_hw(uint32_t crc, const void *buf, size_t len);
+
+uint32_t crc32(const void *data, size_t len)
+{
+	return crc32_hw(0xFFFFFFFF, data, len) ^ 0xFFFFFFFF;
+}
+
+
 const size_t HASH_TABLE_SZ = 5000;
 
-
-__attribute__((noinline)) static size_t hash_djb2(wchar_t *str)
+__attribute__((noinline)) static size_t hash_crc32(wchar_t *str)
 {
-	int64_t hash = 5381;
-	int c = 0;
-	while ((c = *str++))
-		hash = ((hash << 5) + hash) + c;
-	return hash;
+	return (size_t)crc32(str, wcslen(str));
 }
 
 __attribute__((noinline)) static void recursively_free(entry_t *entry)
@@ -24,12 +29,11 @@ __attribute__((noinline)) static void recursively_free(entry_t *entry)
 		return;
 
 	recursively_free(entry->next);
-	free(entry->key);
 	free(entry);
 }
 
 
-__attribute__((noinline)) table_val_t *table_insert_key(hash_table_t *table, wchar_t *key)
+__attribute__((noinline)) table_val_t *table_insert_key(hash_table_t *table, wchar_t *key, size_t len)
 {
 	size_t idx = table->hash_function(key) % table->size;
 	entry_t *head = table->buckets[idx];
@@ -38,7 +42,7 @@ __attribute__((noinline)) table_val_t *table_insert_key(hash_table_t *table, wch
 	while (entry)
 	{
 		// update existing
-		if (wcscmp(entry->key, key) == 0)
+		if(memcmp(entry->key, key, (len + 1) * sizeof(wchar_t)) == 0)
 		{
 			return &entry->val;
 		}
@@ -48,21 +52,21 @@ __attribute__((noinline)) table_val_t *table_insert_key(hash_table_t *table, wch
 
 	// not found, create new entry
 	entry_t *new_entry = calloc(1, sizeof(entry_t));
-	new_entry->key = wcsdup(key);
+	memcpy(new_entry->key, key, 32 * sizeof(wchar_t));
 	new_entry->next = head;
 	table->buckets[idx] = new_entry;
 	return &new_entry->val;
 }
 
 
-__attribute__((noinline)) table_val_t *table_get_key(hash_table_t *table, wchar_t *key)
+__attribute__((noinline)) table_val_t *table_get_key(hash_table_t *table, wchar_t *key, size_t len)
 {
 	size_t idx = table->hash_function(key) % table->size;
 	entry_t *entry = table->buckets[idx];
 
 	while (entry)
 	{
-		if (wcscmp(entry->key, key) == 0)
+		if(memcmp(entry->key, key, (len + 1) * sizeof(wchar_t)) == 0)
 			return &entry->val;
 
 		entry = entry->next;
@@ -71,7 +75,7 @@ __attribute__((noinline)) table_val_t *table_get_key(hash_table_t *table, wchar_
 }
 
 
-__attribute__((noinline)) void table_remove_key(hash_table_t *table, wchar_t *key)
+__attribute__((noinline)) void table_remove_key(hash_table_t *table, wchar_t *key, size_t len)
 {
 	size_t idx = table->hash_function(key) % table->size;
 	entry_t *entry = table->buckets[idx];
@@ -79,7 +83,7 @@ __attribute__((noinline)) void table_remove_key(hash_table_t *table, wchar_t *ke
 
 	while (entry)
 	{
-		if (wcscmp(entry->key, key) == 0)
+		if(memcmp(entry->key, key, (len + 1) * sizeof(wchar_t)) == 0)
 		{
 			if (prev)
 				prev->next = entry->next;
@@ -98,7 +102,7 @@ __attribute__((noinline)) void table_remove_key(hash_table_t *table, wchar_t *ke
 
 hash_table_t table_init(size_t sz)
 {
-	hash_table_t table = {.buckets = calloc(sz, sizeof(entry_t *)), .hash_function = hash_djb2, .size = sz};
+	hash_table_t table = {.buckets = calloc(sz, sizeof(entry_t *)), .hash_function = hash_crc32, .size = sz};
 	return table;
 }
 
@@ -118,7 +122,7 @@ __attribute__((noinline)) hash_table_t build_table_from_text(wchar_t *text)
 		if (text[i] == L' ')
 		{
 			word[cur_word_len] = 0;
-			(*table_insert_key(&table, word))++;
+			(*table_insert_key(&table, word, cur_word_len))++;
 
 			if (cur_word_len > max_len)
 				max_len = cur_word_len;
@@ -192,4 +196,3 @@ float table_load_factor(hash_table_t *table)
 
 	return (float)total / table->size;
 }
-

@@ -6,7 +6,7 @@
 #include "fs.h"
 #include "hash_table.h"
 
-const char* TEXT_PATH = "/home/senyaa/mipt/ded/hash_table/voyna_i_mir.txt";
+const char* TEXT_PATH = "/home/senyaa/mipt/ded/MIPT-Semester-II/hash_table/voyna_i_mir.txt";
 
 int main(int argc, char **argv)
 {
@@ -31,7 +31,7 @@ int main(int argc, char **argv)
 
 	for(size_t i = 0; i < 10000; i++)
 	{
-		table_get_key(&table, L"asdasd");
+		table_get_key(&table, L"asdasd", 5);
 	}
 
 	table_print_top(&table, 10);
