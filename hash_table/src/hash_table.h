@@ -3,31 +3,32 @@
 #include <immintrin.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <wchar.h>
 
-typedef struct entry entry_t;
-
-typedef int32_t table_val_t;
-
-struct entry
-{
-	wchar_t key[32];
-	table_val_t val;
-	entry_t *next;
-};
+#include "data.h"
+#include "list.h"
 
 typedef struct hash_table
 {
-	entry_t **buckets;
-	size_t size;
-	size_t (*hash_function)(wchar_t *);
+	list_t *buckets;
+	uint32_t size;
+	// uint32_t (*hash_function)(__m256i);
 } hash_table_t;
 
-table_val_t *table_insert_key(hash_table_t *table, wchar_t *key, size_t len);
-hash_table_t table_init(size_t sz);
-hash_table_t build_table_from_text(wchar_t *text);
+__attribute__((always_inline)) inline static int avx2_wmemcmp(__m256i a, __m256i b)
+{
+	__m256i cmp = _mm256_cmpeq_epi8(a, b);
+
+	if (_mm256_movemask_epi8(cmp) != -1)
+		return 0;
+	return 1;
+}
+
+extern uint32_t hash_crc32(__m256i key);
+
+hash_table_t table_init(uint32_t sz);
+hash_table_t build_table_from_text(char *text);
 void table_free(hash_table_t *table);
 void table_print_top(hash_table_t *table, size_t top_n);
 float table_load_factor(hash_table_t *table);
-table_val_t *table_get_key(hash_table_t *table, wchar_t *key, size_t len);
-void table_remove_key(hash_table_t *table, wchar_t *key, size_t len);
+table_val_t *table_get_key(hash_table_t *table, char *key, size_t len);
+void table_remove_key(hash_table_t *table, char *key);

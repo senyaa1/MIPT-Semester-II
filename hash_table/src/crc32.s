@@ -1,57 +1,24 @@
-global  crc32_hw
+global hash_crc32
 
 section .text
 
-; Calculates CRC32
-; Input: 	RSI - buffer	RDX - len
-; Output:	CRC32 checksum (return value)
-crc32_hw:
-	push    rbx
-	mov     eax, edi
+hash_crc32:
+	push    rbp
+	mov     rbp, rsp
+	sub     rsp, 32
+
+	vmovdqu ymm0, [rsp]
+
+	mov     rax, 0FFFFFFFFh
+
+	lea     rsi, [rsp]
+	crc32   rax, qword [rsi]        ; bytes  0– 7
+	crc32   rax, qword [rsi +  8]   ; bytes  8–15
+	crc32   rax, qword [rsi + 16]   ; bytes 16–23
+	crc32   rax, qword [rsi + 24]   ; bytes 24–31
+
 	not     eax
 
-	mov     rbx, rsi        ; buf pointer
-	mov     rcx, rdx        ; length
-
-	; 8-byte chunks
-.loop8:
-	cmp     rcx, 8
-	jb      .loop4
-	crc32   rax, qword [rbx]
-	add     rbx, 8
-	sub     rcx, 8
-	jmp     .loop8
-
-	; 4-byte chunks
-.loop4:
-	cmp     rcx, 4
-	jb      .loop2
-	crc32   eax, dword [rbx]
-	add     rbx, 4
-	sub     rcx, 4
-	jmp     .loop4
-
-	; 2-byte chunks
-.loop2:
-	cmp     rcx, 2
-	jb      .loop1
-	crc32   eax, word [rbx]
-	add     rbx, 2
-	sub     rcx, 2
-	jmp     .loop2
-
-	; 1-byte
-.loop1:
-	cmp     rcx, 1
-	jb      .done
-	crc32   eax, byte [rbx]
-	add     rbx, 1
-	sub     rcx, 1
-	jmp     .loop1
-
-.done:
-	not     eax             ; final invert
-
-	pop     rbx
+	leave
 	ret
 

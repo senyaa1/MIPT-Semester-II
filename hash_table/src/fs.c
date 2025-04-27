@@ -1,51 +1,35 @@
-#include <fcntl.h>
-#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
+#include <stdbool.h>
 #include <string.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
+#include <strings.h>
 #include <sys/types.h>
-#include <time.h>
+#include <sys/stat.h>
+#include <sys/mman.h>
+#include <fcntl.h>
 #include <unistd.h>
 
 #include "fs.h"
 
-wchar_t *read_file(const char *filename)
+int read_file(const char* filepath, char** content)
 {
-	FILE *file = fopen(filename, "r");
-	if (!file)
-		return 0;
+	int fd = open(filepath, O_RDONLY);
+	if (fd == -1)
+		return -1;
 
-	fseek(file, 0, SEEK_END);
+	struct stat st = {0};
 
-	size_t size = ftell(file);
-	rewind(file);
+	fstat(fd, &st);
+	off_t sz = st.st_size;
 
-	char *buffer = calloc(size + 1, sizeof(char));
-	if (!buffer)
-	{
-		fclose(file);
-		return 0;
-	}
+	char* fileptr = (char*)mmap(NULL, sz, PROT_READ, MAP_PRIVATE, fd, 0);
 
-	size_t bytes_read = fread(buffer, 1, size, file);
-	buffer[bytes_read] = '\0';
+	*content = (char*)calloc(sz + 1, sizeof(char));
+	memcpy(*content, fileptr, sz);
+	munmap(fileptr, sz);
+	close(fd);
 
-	size_t wc_size = mbstowcs(NULL, buffer, 0);
-
-	wchar_t *wstr = calloc((wc_size + 1), sizeof(wchar_t));
-	if (!wstr)
-	{
-		free(buffer);
-		fclose(file);
-		return 0;
-	}
-
-	mbstowcs(wstr, buffer, wc_size + 1);
-
-	free(buffer);
-	fclose(file);
-
-	return wstr;
+	return sz;
 }
+

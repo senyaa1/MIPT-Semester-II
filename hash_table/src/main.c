@@ -6,7 +6,7 @@
 #include "fs.h"
 #include "hash_table.h"
 
-const char* TEXT_PATH = "/home/senyaa/mipt/ded/MIPT-Semester-II/hash_table/voyna_i_mir.txt";
+const char* TEXT_PATH = "/home/senyaa/ded/MIPT-Semester-II/hash_table/voyna_i_mir.txt";
 
 int main(int argc, char **argv)
 {
@@ -18,8 +18,8 @@ int main(int argc, char **argv)
 	// 	return -1;
 	// }
 	//
-	wchar_t *text = read_file(TEXT_PATH);
-	if (!text)
+	char *text = 0;
+	if (!read_file(TEXT_PATH, &text))
 	{
 		fprintf(stderr, "Unable to read text file!\n");
 		return -1;
@@ -31,10 +31,10 @@ int main(int argc, char **argv)
 
 	for(size_t i = 0; i < 10000; i++)
 	{
-		table_get_key(&table, L"asdasd", 5);
+		table_get_key(&table, "asdasd", 5);
 	}
 
-	table_print_top(&table, 10);
+	// table_print_top(&table, 10);
 
 	table_free(&table);
 

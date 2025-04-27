@@ -1,5 +1,6 @@
 #pragma once
 
-#include <wchar.h>
+#include <stdint.h>
+#include <stdlib.h>
 
-wchar_t *read_file(const char *filename);
+int read_file(const char* filepath, char** content);

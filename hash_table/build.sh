@@ -12,3 +12,5 @@ hyperfine build/hash_table
 
 perf record -g -b ./build/hash_table 
 perf report -Mintel --call-graph
+
+build/hash_table
