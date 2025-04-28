@@ -4,39 +4,81 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "hash_table.h"
 #include "data.h"
+#include "hash_table.h"
 #include "list.h"
 
+#define PREFETCH
+#define BRANCH_HINTS
 
-#define AVX_WORD_SZ 32
-const size_t HASH_TABLE_SZ = 1000;
+#ifdef BRANCH_HINTS
 
+#define likely(x) __builtin_expect(!!(x), 1)
+#define unlikely(x) __builtin_expect(!!(x), 0)
 
-__attribute__((always_inline)) inline static __m256i get_ymm_key(char *key, size_t len)
+#else
+
+#define likely(x) (x)
+#define unlikely(x) (x)
+
+#endif
+
+static const size_t HASH_TABLE_SZ = 4096;
+
+__attribute__((hot)) __attribute__((always_inline)) inline static int avx2_wmemcmp(__m256i a, __m256i b)
 {
-	char aligned_buf[32] = {};
-	memcpy(aligned_buf, key, len % 32);
-	__m256i key_ymm = _mm256_loadu_si256((__m256i const *)aligned_buf);
+	unsigned int mask;
+	__asm__ volatile("vpcmpeqb %[b], %[a], %%ymm0\n\t"
+			 "vpmovmskb %%ymm0, %[mask]\n\t"
+			 : [mask] "=r"(mask)
+			 : [a] "x"(a), [b] "x"(b)
+			 : "ymm0");
+
+	return unlikely(mask == 0xFFFFFFFFu);
+}
+
+__attribute__((hot)) __attribute__((always_inline)) inline static __m256i get_ymm_key(char *key, size_t len)
+{
+	__attribute__((aligned(32))) char aligned_buf[AVX_WORD_SZ] = {};
+	memcpy(aligned_buf, key, len % AVX_WORD_SZ);
+
+	__m256i key_ymm = _mm256_load_si256((__m256i const *)aligned_buf);
 	return key_ymm;
 }
 
-__attribute__((always_inline)) static inline table_val_t *table_get_key_ymm(hash_table_t *table, __m256i key_ymm)
+__attribute__((always_inline)) inline static table_val_t *table_get_key_ymm(hash_table_t *table, __m256i key_ymm)
 {
-	size_t idx = hash_crc32(key_ymm) % table->size;
+	size_t idx = hash_crc32(key_ymm) & (table->size - 1);
+#ifdef PREFETCH
+	__builtin_prefetch(&table->buckets[idx], 0, 3);
+#endif
+
 	list_t *bucket = &table->buckets[idx];
 	list_elem_t *entry = list_begin(bucket);
 
-	while (entry)
+#ifdef BRANCH_HINTS
+	if (unlikely(!entry))
 	{
-		if (avx2_wmemcmp(entry->data.key, key_ymm))
-			return &entry->data.val;
-		entry = list_next(bucket, entry);
+		entry_t new_entry = {.key = key_ymm, .val = 0};
+		list_insert_head(bucket, new_entry);
+		return &list_begin(bucket)->data.val;
 	}
-	entry_t new_entry = {
-		.key = key_ymm,
-		.val = 0
-	};
+#endif
+
+	while (likely(entry))
+	{
+		list_elem_t *next = list_next(bucket, entry);
+#ifdef PREFETCH
+		__builtin_prefetch(next, 0, 1);
+#endif
+
+		if (unlikely(avx2_wmemcmp(entry->data.key, key_ymm)))
+			return &entry->data.val;
+
+		entry = next;
+	}
+
+	entry_t new_entry = {.key = key_ymm, .val = 0};
 
 	list_insert_head(bucket, new_entry);
 
@@ -49,39 +91,13 @@ __attribute__((noinline)) table_val_t *table_get_key(hash_table_t *table, char *
 	return table_get_key_ymm(table, key_ymm);
 }
 
-//
-// __attribute__((noinline)) void table_remove_key(hash_table_t *table, char *key, size_t len)
-// {
-// 	size_t idx = table->hash_function(key) % table->size;
-// 	entry_t *entry = table->buckets[idx];
-// 	entry_t *prev = 0;
-//
-// 	while (entry)
-// 	{
-// 		if (memcmp(entry->key, key, (len + 1) * sizeof(char)) == 0)
-// 		{
-// 			if (prev)
-// 				prev->next = entry->next;
-// 			else
-// 				table->buckets[idx] = entry->next;
-//
-// 			free(entry);
-// 			return;
-// 		}
-//
-// 		prev = entry;
-// 		entry = entry->next;
-// 	}
-// }
-//
 hash_table_t table_init(uint32_t sz)
 {
-	// hash_table_t table = {
-	//     .size = sz, .hash_function = hash_crc32, .buckets = aligned_malloc(sz * sizeof(entry_t *))};
 	hash_table_t table = {.size = sz, .buckets = calloc(sz, sizeof(list_t))};
 
 	for (uint32_t i = 0; i < sz; i++)
 		list_ctor(&table.buckets[i], 32);
+
 	return table;
 }
 
@@ -98,9 +114,9 @@ __attribute__((noinline)) hash_table_t build_table_from_text(char *text)
 	{
 		if (text[i] == '\n')
 		{
-			// printf("%s\n", word);
 			word[cur_word_len] = 0;
-			(*table_get_key(&table, word, cur_word_len))++;
+			table_val_t *cnt = table_get_key(&table, word, cur_word_len);
+			(*cnt)++;
 
 			cur_word_len = 0;
 			continue;
@@ -113,7 +129,6 @@ __attribute__((noinline)) hash_table_t build_table_from_text(char *text)
 
 	return table;
 }
-
 
 __attribute__((noinline)) void table_free(hash_table_t *table)
 {
@@ -139,7 +154,9 @@ __attribute__((noinline)) void table_print_top(hash_table_t *table, size_t top_n
 		list_t *bucket = &table->buckets[i];
 
 		for (entry_t *e = list_begin(bucket); e; e = list_next(bucket, e))
+		{
 			total++;
+		}
 	}
 
 	if (total == 0)
@@ -160,22 +177,8 @@ __attribute__((noinline)) void table_print_top(hash_table_t *table, size_t top_n
 	size_t to_print = top_n < total ? top_n : total;
 	printf("Top %zu words:\n", to_print);
 
-	// for (size_t i = 0; i < to_print; i++)
-	// 	printf("%2zu. %-*s : %u\n", i + 1, max_len, (char*)&arr[i]->key, arr[i]->val);
+	for (size_t i = 1; i < to_print; i++)
+		printf("%2zu. %-*s : %u\n", i + 1, 32, (char *)&arr[i]->key, arr[i]->val);
 
 	free(arr);
-}
-
-float table_load_factor(hash_table_t *table)
-{
-	size_t total = 0;
-	for (uint32_t i = 0; i < table->size; i++)
-	{
-		list_t *bucket = &table->buckets[i];
-
-		for (entry_t *e = list_begin(bucket); e; e = list_next(bucket, e))
-			total++;
-	}
-
-	return (float)total / table->size;
 }

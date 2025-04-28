@@ -1,4 +1,5 @@
 #include <locale.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <wchar.h>
@@ -27,9 +28,7 @@ int main(int argc, char **argv)
 
 	hash_table_t table = build_table_from_text(text);
 
-	printf("load factor: %g\n", table_load_factor(&table));
-
-	for(size_t i = 0; i < 10000; i++)
+	for(size_t i = 0; i < 50000000; i++)
 	{
 		table_get_key(&table, "asdasd", 5);
 	}

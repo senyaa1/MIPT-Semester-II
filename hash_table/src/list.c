@@ -6,21 +6,22 @@
 #include "hash_table.h"
 #include "list.h"
 
-
 static list_status_t list_increase_alloc(list_t *list)
 {
-	list_elem_t *new_alloc = (list_elem_t *)realloc(list->elements, list->size * 2 * sizeof(list_elem_t));
+	size_t new_size = list->size * 2 + 1;
+	void *new_ptr;
 
-	if (!new_alloc)
+	if (posix_memalign(&new_ptr, 32, new_size * sizeof *list->elements))
 		return LIST_ERR_ALLOC;
 
-	list->elements = new_alloc;
-	list->size *= 2;
+	memcpy(new_ptr, list->elements, (list->size + 1) * sizeof *list->elements);
+	free(list->elements);
+
+	list->elements = new_ptr;
+	list->size = new_size - 1;
 
 	return LIST_OK;
 }
-
-
 
 static list_status_t list_maybe_increase_alloc(list_t *list)
 {
@@ -38,8 +39,14 @@ list_status_t list_ctor(list_t *list, size_t initial_size)
 	if (list->elements)
 		return LIST_ERR_ALLOC;
 
+	memset(list, 0, sizeof(list_t));
+
 	list->size = initial_size;
-	list->elements = (list_elem_t *)calloc(list->size + 1, sizeof(list_elem_t));
+
+	if (posix_memalign((void **)&list->elements, 32, (list->size + 1) * sizeof *list->elements) != 0)
+		return LIST_ERR_ALLOC;
+	memset(list->elements, 0, (list->size + 1) * sizeof *list->elements);
+
 	list->cnt = 0;
 
 	for (int i = 1; i < initial_size; i++)
@@ -98,6 +105,9 @@ list_status_t list_insert_before(list_t *list, int index, list_data_t data)
 	if (list_maybe_increase_alloc(list))
 		return LIST_ERR_ALLOC;
 
+	if (list->free == 0)
+		return LIST_ERR_ALLOC;
+
 	int insertion_index = list->free;
 	list->free = list->elements[insertion_index].next;
 
@@ -123,6 +133,11 @@ list_status_t list_insert_before(list_t *list, int index, list_data_t data)
 
 list_status_t list_remove_at(list_t *list, int index)
 {
+	if (!list || !list->elements)
+		return LIST_ERR_ARGNULL;
+	if (index <= 0 || index > (int)list->size)
+		return LIST_ERR_ARGNULL;
+
 	list_elem_t *elem = &list->elements[index];
 
 	list->elements[elem->prev].next = elem->next;
@@ -191,3 +206,4 @@ int list_index(list_t *list, int index)
 
 	return -1;
 }
+
