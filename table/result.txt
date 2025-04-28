@@ -1,0 +1,7 @@
+30 runs
+
+Optimized hash table  (mean ± σ):     491.4 ms ±   0.9 ms
+ 
+Naive hash table      (mean ± σ):      1.199 s ±  0.110 s
+ 
+Optimized version is 2.44 ± 0.22 times faster than naive implementation.

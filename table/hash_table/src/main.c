@@ -11,31 +11,6 @@
 #include "fs.h"
 #include "hash_table.h"
 
-static inline uint64_t rdtsc_start(void)
-{
-	unsigned hi, lo;
-	__asm__ __volatile__("cpuid\n"		  // serializing
-			     "rdtsc\n"		  // read TSC
-			     : "=a"(lo), "=d"(hi) // output
-			     : "a"(0)		  // input: CPUID leaf 0
-			     : "rbx", "rcx"	  // clobbered
-	);
-	return ((uint64_t)hi << 32) | lo;
-}
-
-static inline uint64_t rdtsc_end(void)
-{
-	unsigned hi, lo;
-	__asm__ __volatile__("rdtscp\n"
-			     "mov %%eax, %0\n"
-			     "mov %%edx, %1\n"
-			     "cpuid\n"
-			     : "=r"(lo), "=r"(hi)
-			     :
-			     : "rax", "rbx", "rcx", "rdx");
-	return ((uint64_t)hi << 32) | lo;
-}
-
 const char *TEXT_PATH = "voyna_i_mir.txt";
 
 void run_test(char *text)
@@ -62,20 +37,8 @@ int main(int argc, char **argv)
 		fprintf(stderr, "Unable to read text file!\n");
 		return -1;
 	}
-	//
-	// // 2) Pin to CPU 0
-	// cpu_set_t cpuset;
-	// CPU_ZERO(&cpuset);
-	// CPU_SET(4, &cpuset);
-	// sched_setaffinity(0, sizeof(cpuset), &cpuset);
-	//
-	// uint64_t start = rdtsc_start();
+
 	run_test(text);
-	// uint64_t end = rdtsc_end();
-	//
-	// uint64_t cycles = end - start;
-	// printf("Total cycles       : %lu\n", cycles);
-	//
 
 	free(text);
 	return 0;

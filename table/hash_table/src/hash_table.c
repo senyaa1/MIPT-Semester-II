@@ -91,11 +91,11 @@ __attribute__((noinline)) table_val_t *table_get_key(hash_table_t *table, char *
 	return table_get_key_ymm(table, key_ymm);
 }
 
-hash_table_t table_init(uint32_t sz)
+hash_table_t table_init(uint64_t sz)
 {
 	hash_table_t table = {.size = sz, .buckets = calloc(sz, sizeof(list_t))};
 
-	for (uint32_t i = 0; i < sz; i++)
+	for (uint64_t i = 0; i < sz; i++)
 		list_ctor(&table.buckets[i], 32);
 
 	return table;
@@ -105,12 +105,12 @@ __attribute__((noinline)) hash_table_t build_table_from_text(char *text)
 {
 	hash_table_t table = table_init(HASH_TABLE_SZ);
 
-	uint32_t len = strlen(text);
+	uint64_t len = strlen(text);
 
 	char word[AVX_WORD_SZ] = {0};
 	int cur_word_len = 0;
 
-	for (uint32_t i = 0; i < len; i++)
+	for (uint64_t i = 0; i < len; i++)
 	{
 		if (text[i] == '\n')
 		{
@@ -132,7 +132,7 @@ __attribute__((noinline)) hash_table_t build_table_from_text(char *text)
 
 __attribute__((noinline)) void table_free(hash_table_t *table)
 {
-	for (uint32_t i = 0; i < table->size; i++)
+	for (uint64_t i = 0; i < table->size; i++)
 		list_dtor(&table->buckets[i]);
 	free(table->buckets);
 }
@@ -149,7 +149,7 @@ static int cmp_entry_val_desc(const void *a, const void *b)
 __attribute__((noinline)) void table_print_top(hash_table_t *table, size_t top_n)
 {
 	size_t total = 0;
-	for (uint32_t i = 0; i < table->size; i++)
+	for (uint64_t i = 0; i < table->size; i++)
 	{
 		list_t *bucket = &table->buckets[i];
 
