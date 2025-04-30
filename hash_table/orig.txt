@@ -1,4 +1,0 @@
-Benchmark 1: build/hash_table
-  Time (mean ± σ):     350.2 ms ±   7.5 ms    [User: 339.7 ms, System: 9.4 ms]
-  Range (min … max):   344.0 ms … 368.4 ms    10 runs
-

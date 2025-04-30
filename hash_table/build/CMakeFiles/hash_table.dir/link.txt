@@ -1,1 +1,0 @@
-/usr/bin/cc -O3 -DNDEBUG -g -O3 -Wl,--dependency-file=CMakeFiles/hash_table.dir/link.d CMakeFiles/hash_table.dir/src/main.c.o CMakeFiles/hash_table.dir/src/fs.c.o CMakeFiles/hash_table.dir/src/hash_table.c.o CMakeFiles/hash_table.dir/src/list.c.o CMakeFiles/hash_table.dir/src/crc32.s.o -o hash_table
