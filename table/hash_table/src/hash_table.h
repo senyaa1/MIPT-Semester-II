@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cstdint>
 #include <immintrin.h>
 #include <stdbool.h>
 #include <stdint.h>
